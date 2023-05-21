@@ -87,6 +87,7 @@ class TimestepEmbedSequential(nn.Sequential, TimestepBlock, CondTimestepBlock):
             elif isinstance(layer, TimestepBlock):
                 x = layer(x, emb)
             else:
+                #print("Line 90 in unet.py: cuda available?", th.cuda.is_available())
                 x = layer(x)
         return x
 

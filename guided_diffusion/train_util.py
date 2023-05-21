@@ -41,6 +41,7 @@ class TrainLoop:
         weight_decay=0.0,
         lr_anneal_steps=0,
     ):
+        print("Train util LINE 44, CUDA available:", th.cuda.is_available(), "num CUDA devices:", th.cuda.device_count()) #this line makes the difference if CUDA is correctly detected or not
         self.model = model
         self.diffusion = diffusion
         self.data = data
@@ -68,8 +69,10 @@ class TrainLoop:
         self.global_batch = self.batch_size * dist.get_world_size()
 
         self.sync_cuda = th.cuda.is_available()
-
+        print("Train util LINE 71, CUDA available:", th.cuda.is_available(), "num CUDA devices:", th.cuda.device_count()) #this line makes the difference if CUDA is correctly detected or not
         self._load_and_sync_parameters()
+        print("Train util LINE 74, CUDA available:", th.cuda.is_available(), "num CUDA devices:", th.cuda.device_count()) #this line makes the difference if CUDA is correctly detected or not
+
         self.mp_trainer = MixedPrecisionTrainer(
             model=self.model,
             use_fp16=self.use_fp16,
@@ -112,6 +115,8 @@ class TrainLoop:
             self.ddp_model = self.model
 
     def _load_and_sync_parameters(self):
+        print("Train util LINE 115, CUDA available:", th.cuda.is_available(), "num CUDA devices:", th.cuda.device_count()) #this line makes the difference if CUDA is correctly detected or not
+        
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
 
         if resume_checkpoint:

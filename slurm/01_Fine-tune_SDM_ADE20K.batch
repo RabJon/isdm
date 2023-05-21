@@ -1,0 +1,26 @@
+#!/bin/bash
+#SBATCH --job-name=SDM-ADE20K-Finetune
+#SBATCH --output=SDM-ADE20K-Finetune-%j.out
+#SBATCH --error=SDM-ADE20K-Finetune-%j.err
+#SBATCH --partition gpu
+#SBATCH --ntasks-per-node=2 
+#SBATCH --nodes=1
+#SBATCH --gres=gpu:1
+
+source /opt/packages/anaconda3/etc/profile.d/conda.sh
+
+conda activate sdm
+
+echo "sdm activated! Executing SDM-ADE20K-Finetune..."
+
+# Classifier-free Finetune
+echo "Starting Classifier-free Finetune ..."
+export OPENAI_LOGDIR='OUTPUT/ADE20K-SDM-256CH-FINETUNE'
+python image_train.py --data_dir ./data/ade20k --dataset_mode ade20k --lr 2e-5 --batch_size 4 --attention_resolutions 32,16,8 --diffusion_steps 1000 --image_size 256 --learn_sigma True \
+	     --noise_schedule linear --num_channels 256 --num_head_channels 64 --num_res_blocks 2 --resblock_updown True --use_fp16 True --use_scale_shift_norm True --use_checkpoint True --num_classes 151 \
+	     --class_cond True --no_instance True --drop_rate 0.2 --resume_checkpoint OUTPUT/ADE20K-SDM-256CH/model050000.pt
+# original: --resume_checkpoint OUTPUT/ADE20K-SDM-256CH/model.pt
+echo "Classifier-free Finetune terminated!"
+
+#The essential param that changes between training and fine-tuning is "drop_rate": they randomly drop pixels of the semantic mask during fine-tuning
+# They do this by multiplying the semantic mask with a binary mask of same size: mask = (th.rand([input_semantics.shape[0], 1, 1, 1]) > self.drop_rate).float()

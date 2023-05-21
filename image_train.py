@@ -15,9 +15,11 @@ from guided_diffusion.script_util import (
     add_dict_to_argparser,
 )
 from guided_diffusion.train_util import TrainLoop
+import torch
 
 
 def main():
+    print("CUDA available 1:", torch.cuda.is_available(), "device_count:", torch.cuda.device_count()) #this line makes the difference if CUDA is correctly detected or not
     args = create_argparser().parse_args()
 
     dist_util.setup_dist()
@@ -39,7 +41,7 @@ def main():
         class_cond=args.class_cond,
         is_train=args.is_train
     )
-
+    print("CUDA available 2:", torch.cuda.is_available(), "device_count:", torch.cuda.device_count())
     logger.log("training...")
     TrainLoop(
         model=model,

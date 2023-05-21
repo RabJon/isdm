@@ -262,7 +262,7 @@ class GaussianDiffusion:
         else:
             model_output = model(x, self._scale_timesteps(t), **model_kwargs)
 
-        if 's' in model_kwargs and model_kwargs['s'] > 1.0:
+        if 's' in model_kwargs and model_kwargs['s'] > 1.0: #classifier-free guidance with guidance scale s
             model_output_zero = model(x, self._scale_timesteps(t), y=th.zeros_like(model_kwargs['y']))
             model_output[:, :3] = model_output_zero[:, :3] + model_kwargs['s'] * (model_output[:, :3] - model_output_zero[:, :3])
 

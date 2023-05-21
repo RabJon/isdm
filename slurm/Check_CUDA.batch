@@ -1,0 +1,19 @@
+#!/bin/bash
+#SBATCH --job-name=Check_CUDA
+#SBATCH --output=Check_CUDA-%j.out
+#SBATCH --error=Check_CUDA-%j.err
+#SBATCH --partition gpu
+#SBATCH --ntasks-per-node=2 
+#SBATCH --nodes=1
+#SBATCH --gres=gpu:1
+
+source /opt/packages/anaconda3/etc/profile.d/conda.sh
+
+conda activate sdm
+
+echo "sdm activated! Executing Check_CUDA..."
+
+# python -c "import torch; print(torch.cuda.is_available()); print(torch.Tensor([1,2,3]).half()); print(torch.__version__)"
+python tmp_pytorch_cuda_test.py
+
+echo "Execution of Check_CUDA terminated!"

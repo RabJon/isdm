@@ -6,10 +6,6 @@ numpy array. This can be used to produce samples for FID evaluation.
 import argparse
 import os
 
-import torch as th
-import torch.distributed as dist
-import torchvision as tv
-
 from guided_diffusion.image_datasets import load_data
 
 from guided_diffusion import dist_util, logger
@@ -20,8 +16,13 @@ from guided_diffusion.script_util import (
     args_to_dict,
 )
 
+import torch as th
+import torch.distributed as dist
+import torchvision as tv
+
 
 def main():
+    print("CUDA available 1:", th.cuda.is_available()) #this line makes the difference if CUDA is correctly detected or not
     args = create_argparser().parse_args()
 
     dist_util.setup_dist()

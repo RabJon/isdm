@@ -48,7 +48,9 @@ def dev():
     Get the device to use for torch.distributed.
     """
     if th.cuda.is_available():
+        #print("dist_util.py LINE 51: CUDA is available")
         return th.device(f"cuda")
+    print("dist_util.py LINE 53: CUDA is NOT available")
     return th.device("cpu")
 
 
