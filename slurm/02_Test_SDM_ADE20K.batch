@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=SDM-ADE20K-Test
-#SBATCH --output=SDM-ADE20K-Test-%j.out
-#SBATCH --error=SDM-ADE20K-Test-%j.err
+#SBATCH --job-name=SDM-Test
+#SBATCH --output=SDM-Test-%j.out
+#SBATCH --error=SDM-Test-%j.err
 #SBATCH --partition gpu
 #SBATCH --ntasks-per-node=2 
 #SBATCH --nodes=1
@@ -11,18 +11,50 @@ source /opt/packages/anaconda3/etc/profile.d/conda.sh
 
 conda activate sdm
 
-echo "sdm activated! Executing SDM-ADE20K-Test..."
+echo "sdm activated! Executing SDM-Test..."
 
-# Testing
-echo "Starting testing ..."
-export OPENAI_LOGDIR='OUTPUT/ADE20K-SDM-256CH-TEST'
-python image_sample.py --data_dir ./data/ade20k --dataset_mode ade20k --attention_resolutions 32,16,8 --diffusion_steps 1000 --image_size 256 --learn_sigma True \
-       --noise_schedule linear --num_channels 256 --num_head_channels 64 --num_res_blocks 2 --resblock_updown True --use_fp16 True --use_scale_shift_norm True --num_classes 151 \
-       --class_cond True --no_instance True --batch_size 2 --num_samples 50 --model_path OUTPUT/ADE20K-SDM-256CH-FINETUNE/ema_0.9999_070000.pt --results_path RESULTS/ADE20K-SDM-256CH-070000 --s 1.5
-# python tmp_pytorch_cuda_test.py
+data_dir="./data/Kvasir-SEG_clean"
+dataset_mode="lemon-binary"
+diffusion_steps=300
+num_classes=2
+model_path="OUTPUT/lemon-dataset-binary-blemish-SDM-256CH_2/ema_0.9999_100000.pt"
+s=1.5
+batch_size=2
+num_samples=1000
+
+
+
+IFS='/'
+read -a splitted <<< $data_dir
+output_dir=${splitted[@]:2}
+output_dir="${output_dir// /_}" #replace the " " by "_"
+
+read -a splitted <<< $model_path
+model_name=${splitted[-1]}
+
+output_dir=$output_dir"_""$model_name""_d="$diffusion_steps"_c="$num_classes"_s="$num_samples
+
+echo "Sampling" "$num_samples" "samples from the SDM at" "$model_path"
+
+results_path="RESULTS/"$output_dir
+export OPENAI_LOGDIR='OUTPUT/'$output_dir
+echo "Logging to" "$OPENAI_LOGDIR" ". Find samples at " "$results_path"
+
+
+python image_sample.py --data_dir "$data_dir" --dataset_mode $dataset_mode --attention_resolutions 32,16,8 --diffusion_steps 300 --image_size 256 --learn_sigma True \
+       --noise_schedule linear --num_channels 256 --num_head_channels 64 --num_res_blocks 2 --resblock_updown True --use_fp16 True --use_scale_shift_norm True --num_classes $num_classes \
+       --class_cond True --no_instance True --batch_size $batch_size --num_samples $num_samples --model_path "$model_path" --results_path "$results_path" --s $s
+python tmp_pytorch_cuda_test.py
 echo "Testing terminated!"
 
 #original = --model_path OUTPUT/ADE20K-SDM-256CH-FINETUNE/ema_0.9999_best.pt
 #models at 50000 and 80000 steps didn't perform well.
 
-echo "Execution of SDM-ADE20K-Test terminated!"
+echo "Execution of SDM-Test terminated!"
+
+
+# python image_sample.py --data_dir ./data/lemon-dataset-binary-blemish --dataset_mode lemon-binary --attention_resolutions 32,16,8 --diffusion_steps 1000 --image_size 256 --learn_sigma True \
+#        --noise_schedule linear --num_channels 256 --num_head_channels 64 --num_res_blocks 2 --resblock_updown True --use_fp16 True --use_scale_shift_norm True --num_classes 2 \
+#        --class_cond True --no_instance True --batch_size 2 --num_samples 10 --model_path OUTPUT/lemon-dataset-binary-blemish-SDM-256CH_2/ema_0.9999_110000.pt --results_path RESULTS/lemon-dataset-binary-blemish-SDM-256CH_2 --s 1.5
+
+# python tmp_pytorch_cuda_test.py
