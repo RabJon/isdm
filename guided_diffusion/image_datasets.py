@@ -58,6 +58,11 @@ def load_data(
         all_files = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'images'))
         classes = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'labels'))
         instances = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'labels'))
+    elif dataset_mode == "lemon-binary":
+        all_files = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'images'))
+        classes = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'masks'))
+        instances = None
+    
     else:
         raise NotImplementedError('{} not implemented'.format(dataset_mode))
 
@@ -140,6 +145,8 @@ class ImageDataset(Dataset):
             pil_class = Image.open(f)
             pil_class.load()
         pil_class = pil_class.convert("L")
+        # if not np.array_equal(np.unique(np.array(pil_class)), np.array([0,255])):
+        #         raise Exception("Resizing mask did not work properly:", np.unique(np.array(pil_class)), class_path)
 
         if self.local_instances is not None:
             instance_path = self.local_instances[idx] # DEBUG: from classes to instances, may affect CelebA
@@ -150,8 +157,11 @@ class ImageDataset(Dataset):
         else:
             pil_instance = None
 
-        if self.dataset_mode == 'cityscapes':
+        if self.dataset_mode in ["cityscapes", "lemon-binary"]:
             arr_image, arr_class, arr_instance = resize_arr([pil_image, pil_class, pil_instance], self.resolution)
+            # if not np.array_equal(np.unique(arr_class), np.array([0,255])):
+            #     raise Exception("Resizing mask did not work properly:", np.unique(arr_class))
+                              
         else:
             if self.is_train:
                 if self.random_crop:
@@ -176,6 +186,11 @@ class ImageDataset(Dataset):
             arr_class[arr_class == 255] = 150
         elif self.dataset_mode == 'coco':
             arr_class[arr_class == 255] = 182
+        elif self.dataset_mode == "lemon-binary":
+            arr_class[arr_class == 255] = 1 #make it array consisting of 0 and 1
+
+        # if not np.array_equal(np.unique(arr_class), np.array([0,1])):
+        #     raise Exception("Resizing mask did not work properly:", np.unique(arr_class))
 
         out_dict['label'] = arr_class[None, ]
 
