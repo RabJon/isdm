@@ -43,8 +43,9 @@ from imageio import imread
 import imageio
 from torch.nn.functional import adaptive_avg_pool2d
 from skimage.transform import resize
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import numpy as np
+import argparse
 
 try:
     from tqdm import tqdm
@@ -264,13 +265,23 @@ def calculate_fid_given_paths(paths, batch_size, cuda, dims):
 
 
 if __name__ == '__main__':
-    #args = parser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('real', type=str, help='Global path to real images directory')
+    parser.add_argument('fake', type=str, help='Global path to generated images directory')
+    
+    args = parser.parse_args()
     os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 
-    path1 = "./results/real_B/"
-    path2 = "./results/fake_B/"
+    # path1 = "./results/real_B/"
+    # path2 = "./results/fake_B/"
+    
+    path1 = args.real
+    path2 = args.fake
+    
     batch_size = 50
     dims = 2048
+
+
 
     fid_value = calculate_fid_given_paths([path1, path2],
                                           batch_size,
