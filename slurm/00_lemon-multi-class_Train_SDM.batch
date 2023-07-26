@@ -1,0 +1,47 @@
+#!/bin/bash
+#SBATCH --job-name=SDM-Train
+#SBATCH --output=SDM-Train-%j.out
+#SBATCH --error=SDM-Train-%j.err
+#SBATCH --partition=gpu-low
+#SBATCH --account=standard
+#SBATCH --time=3-00:00:00
+#SBATCH --gres=gpu:a100_3g.39gb
+#SBATCH --mem=30G
+
+
+
+
+#source /opt/packages/anaconda3/etc/profile.d/conda.sh
+. /etc/profile #to source the module command
+module load python/3.10.8-gcc-12.1.0-linux-ubuntu22.04-x86_64
+module load anaconda3/2022.05-gcc-12.1.0-linux-ubuntu22.04-x86_64
+
+conda activate sdm
+
+echo "sdm activated! Executing SDM-Train..."
+
+
+data_dir="./data/lemon-dataset-multi-class"
+dataset_mode="lemon-multi-class"
+diffusion_steps=1000
+num_classes=11
+class_cond=False
+
+IFS='/'
+read -a splitted <<< $data_dir
+output_dir=${splitted[@]:2}
+output_dir="${output_dir// /_}" #replace the " " by "_"
+output_dir=$output_dir"_d="$diffusion_steps"_class_cond=""$class_cond""_num_classes="$num_classes
+
+
+echo "Training SDM on" "$data_dir"
+
+export OPENAI_LOGDIR='OUTPUT/'$output_dir
+echo "Logging models to" "$OPENAI_LOGDIR"
+python image_train.py --data_dir "$data_dir" --dataset_mode $dataset_mode --lr 1e-4 --batch_size 4 --attention_resolutions 32,16,8 --diffusion_steps $diffusion_steps --image_size 256 --learn_sigma True \
+	     --noise_schedule linear --num_channels 256 --num_head_channels 64 --num_res_blocks 2 --resblock_updown True --use_fp16 True --use_scale_shift_norm True --use_checkpoint True \
+	     --num_classes $num_classes --class_cond "$class_cond" --no_instance True
+#python tmp_pytorch_cuda_test.py
+
+
+echo "Execution of SDM Training terminated!"
