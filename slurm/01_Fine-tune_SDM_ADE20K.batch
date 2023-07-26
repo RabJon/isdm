@@ -2,24 +2,35 @@
 #SBATCH --job-name=SDM-Finetune
 #SBATCH --output=SDM-Finetune-%j.out
 #SBATCH --error=SDM-Finetune-%j.err
-#SBATCH --partition gpu
-#SBATCH --ntasks-per-node=2 
-#SBATCH --nodes=1
-#SBATCH --gres=gpu:1
+#SBATCH --partition=gpu-low
+#SBATCH --account=standard
+#SBATCH --time=1-00:00:00
+#SBATCH --gres=gpu:a100_3g.39gb
+#SBATCH --mem=30G
 
-source /opt/packages/anaconda3/etc/profile.d/conda.sh
+
+
+
+# DEBUG GPU: partition=debug-gpu, gres=gpu:v100
+# LOW GPU: partition=gpu-low, gres=gpu:a100_3g.39gb
+
+
+# source /opt/packages/anaconda3/etc/profile.d/conda.sh
+. /etc/profile #to source the module command
+module load python/3.10.8-gcc-12.1.0-linux-ubuntu22.04-x86_64
+module load anaconda3/2022.05-gcc-12.1.0-linux-ubuntu22.04-x86_64
 
 conda activate sdm
 
 echo "sdm activated! Executing SDM-Finetune..."
 
 
-data_dir="./data/Kvasir-SEG_clean"
-dataset_mode="lemon-binary"
+data_dir="./data/lemon-dataset-multi-class" #"./data/Kvasir-SEG-clean"
+dataset_mode="lemon-multi-class" #"lemon-binary"
 diffusion_steps=1000
-num_classes=2
+num_classes=11 #2
 drop_rate=0.2
-resume_checkpoint="OUTPUT/lemon-dataset-binary-blemish-SDM-256CH_2/ema_0.9999_100000.pt"
+resume_checkpoint="OUTPUT/lemon-dataset-multi-class_d=1000_c=11/model080000.pt" #"OUTPUT/Kvasir-SEG-clean_d=1000_c=2/model100000.pt"
 
 IFS='/'
 read -a splitted <<< $data_dir
@@ -36,8 +47,8 @@ echo "Logging finetuned models to" "$OPENAI_LOGDIR"
 python image_train.py --data_dir "$data_dir" --dataset_mode $dataset_mode --lr 2e-5 --batch_size 4 --attention_resolutions 32,16,8 --diffusion_steps $diffusion_steps --image_size 256 --learn_sigma True \
 	     --noise_schedule linear --num_channels 256 --num_head_channels 64 --num_res_blocks 2 --resblock_updown True --use_fp16 True --use_scale_shift_norm True --use_checkpoint True --num_classes $num_classes \
 	     --class_cond True --no_instance True --drop_rate $drop_rate --resume_checkpoint "$resume_checkpoint"
-original: --resume_checkpoint OUTPUT/ADE20K-SDM-256CH/model.pt
+# original: --resume_checkpoint OUTPUT/ADE20K-SDM-256CH/model.pt
 echo "Classifier-free Finetune terminated!"
 
 #The essential param that changes between training and fine-tuning is "drop_rate": they randomly drop pixels of the semantic mask during fine-tuning
-# They do this by multiplying the semantic mask with a binary mask of same size: mask = (th.rand([input_semantics.shape[0], 1, 1, 1]) > self.drop_rate).float()
+# They do this by multiplying the semantic mask with a binary mask of same size: mask = (th.rand([input_semantics.shape[0], 1, 1, 1]) > self.drop_rate).float()    

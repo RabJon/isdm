@@ -24,14 +24,14 @@ conda activate sdm
 
 echo "sdm activated! Executing SDM-Test..."
 
-data_dir="./data/lemon-dataset-multi-class" # "./data/Kvasir-SEG-clean"
-dataset_mode="lemon-multi-class" #"lemon-binary"
+data_dir="./data/Kvasir-SEG-clean"
+dataset_mode="lemon-binary"
 diffusion_steps=300
-num_classes=11 #2
-model_path="OUTPUT/Kvasir-SEG-clean_d=1000_c=2/ema_0.9999_100000.pt" #"OUTPUT/Kvasir-SEG-clean_d=1000_c=2_FINETUNE/ema_0.9999_020000.pt"
+num_classes=2
+model_path="OUTPUT/Kvasir-SEG-clean_d=1000_c=2/ema_0.9999_100000.pt"
 s=0.0
 batch_size=2
-num_samples=10
+num_samples=4
 
 
 
@@ -43,7 +43,7 @@ output_dir="${output_dir// /_}" #replace the " " by "_"
 read -a splitted <<< $model_path
 model_name=${splitted[-1]}
 
-output_dir=$output_dir"_""$model_name""_d="$diffusion_steps"_c="$num_classes"_s="$num_samples
+output_dir=$output_dir"_""$model_name""_d="$diffusion_steps"_c="$num_classes"_samples="$num_samples"s="$s
 
 echo "Sampling" "$num_samples" "samples from the SDM at" "$model_path"
 
