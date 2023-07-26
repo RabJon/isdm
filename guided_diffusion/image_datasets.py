@@ -58,7 +58,7 @@ def load_data(
         all_files = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'images'))
         classes = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'labels'))
         instances = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'labels'))
-    elif dataset_mode == "lemon-binary":
+    elif dataset_mode in ["lemon-binary", "lemon-multi-class"]:
         all_files = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'images'))
         classes = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'masks'))
         instances = None
@@ -157,8 +157,9 @@ class ImageDataset(Dataset):
         else:
             pil_instance = None
 
-        if self.dataset_mode in ["cityscapes", "lemon-binary"]:
-            arr_image, arr_class, arr_instance = resize_arr([pil_image, pil_class, pil_instance], self.resolution)
+        if self.dataset_mode in ["cityscapes", "lemon-binary", "lemon-multi-class"]:
+            arr_image, arr_class, arr_instance = resize_arr([pil_image, pil_class, pil_instance], self.resolution, keep_aspect=False)
+            # arr_image, arr_class, arr_instance = resize_arr([pil_image, pil_class, pil_instance], self.resolution)
             # if not np.array_equal(np.unique(arr_class), np.array([0,255])):
             #     raise Exception("Resizing mask did not work properly:", np.unique(arr_class))
                               
@@ -188,6 +189,7 @@ class ImageDataset(Dataset):
             arr_class[arr_class == 255] = 182
         elif self.dataset_mode == "lemon-binary":
             arr_class[arr_class == 255] = 1 #make it array consisting of 0 and 1
+        
 
         # if not np.array_equal(np.unique(arr_class), np.array([0,1])):
         #     raise Exception("Resizing mask did not work properly:", np.unique(arr_class))
