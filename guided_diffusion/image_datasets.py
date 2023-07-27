@@ -96,6 +96,55 @@ def load_data(
         yield from loader
 
 
+def load_data_from_file_paths(
+    *,
+    dataset_mode,
+    file_paths,
+    batch_size,
+    image_size,
+    class_cond=False,
+    deterministic=False,
+    random_crop=True,
+    random_flip=True
+    ):
+
+    if dataset_mode in ["lemon-binary", "lemon-multi-class"]:
+        image_paths = file_paths[0]
+        mask_paths = file_paths[1]
+        if class_cond:
+            classes = mask_paths
+        else:
+            classes = None
+        instances = None
+    
+    else:
+        raise NotImplementedError('{} not implemented'.format(dataset_mode))
+    
+    dataset = ImageDataset(
+        dataset_mode,
+        image_size,
+        image_paths,
+        classes=classes,
+        instances=instances,
+        shard=MPI.COMM_WORLD.Get_rank(),
+        num_shards=MPI.COMM_WORLD.Get_size(),
+        random_crop=random_crop,
+        random_flip=random_flip,
+    )
+
+    if deterministic:
+        loader = DataLoader(
+            dataset, batch_size=batch_size, shuffle=False, num_workers=1, drop_last=True
+        )
+    else:
+        loader = DataLoader(
+            dataset, batch_size=batch_size, shuffle=True, num_workers=1, drop_last=True
+        )
+    
+    return loader
+
+
+
 def _list_image_files_recursively(data_dir):
     results = []
     for entry in sorted(bf.listdir(data_dir)):

@@ -2,12 +2,15 @@ import argparse
 import json
 import os
 from shutil import copyfile, rmtree, move
+import filecmp
+from sklearn.model_selection import train_test_split
+from datetime import datetime
 
 from guided_diffusion.script_util import model_and_diffusion_defaults
 
 import torch
 
-from image_train import train
+from image_train import train, get_training_defaults
 from image_sample import sample, get_sampling_defaults
 
 
@@ -26,24 +29,86 @@ def save_config(config_path, config):
         json.dump(config, f)
 
 
-class SystemCallError(Exception):
-    def __init__(self, command, exit_status):            
-        self.command = command
-        self.exit_status = exit_status
-        self.message = "System call error with exit status " + str(self.exit_status) + "when executing the command:\n" + str(self.command)
-        super().__init__(self.message)
+# class SystemCallError(Exception):
+#     def __init__(self, command, exit_status):            
+#         self.command = command
+#         self.exit_status = exit_status
+#         self.message = "System call error with exit status " + str(self.exit_status) + "when executing the command:\n" + str(self.command)
+#         super().__init__(self.message)
 
-def make_system_call(command, check_exit_status = True):
-    print("Executing command:", command)
-    exit_status = os.system(command)
-    if check_exit_status and exit_status:
-        raise SystemCallError(command, exit_status)
+# def make_system_call(command, check_exit_status = True):
+#     print("Executing command:", command)
+#     exit_status = os.system(command)
+#     if check_exit_status and exit_status:
+#         raise SystemCallError(command, exit_status)
+
+
+def get_dataset_file_paths(train_root_path, test_root_path = None):
+    def get_file_names(dir_path):
+        
+        if not os.path.isdir(dir_path):
+            raise ValueError(str(dir_path) + " is not an existing folder!")
+        
+        images_subfolder = os.path.join(dir_path, "images")
+        masks_subfolder = os.path.join(dir_path, "masks")
+        if not os.path.isdir(images_subfolder):
+            raise ValueError("The required images subfolder " +  str(images_subfolder), " is not an existing folder!")
+        if not os.path.isdir(masks_subfolder):
+            raise ValueError("The required masks subfolder " + str(masks_subfolder) + " is not an existing folder!")
+
+        image_names_list = os.listdir(images_subfolder)
+        image_names_list.sort()
+
+        masks_names_list = os.listdir(masks_subfolder)
+        masks_names_list.sort()
+
+        for mask_name in masks_names_list:
+            if not mask_name.endswith(".png"):
+                raise ValueError("Masks are required to have PNG format!")
+            
+        image_names_list_no_ext = [im.split(".")[0] for im in image_names_list]
+        mask_names_list_no_ext = [m.split(".")[0] for m in masks_names_list]
+
+
+        if len(image_names_list_no_ext) != len(mask_names_list_no_ext):
+            raise ValueError("The images subfolder and the masks subfolder do not contain the same number of images! Each image should have exactly one corresponding mask!")
+
+        if image_names_list_no_ext != mask_names_list_no_ext:
+            raise ValueError("The image filenames and mask filenames are not the same!")
+            
+
+        return image_names_list, masks_names_list
+
+    def check_duplicates(train_image_paths, test_image_paths):
+        for train_path in train_image_paths:
+            for test_path in test_image_paths:
+                if filecmp.cmp(train_path, test_path, shallow=False):
+                    raise ValueError("The files " + str(train_path) + " and " +  str(test_path) + " are identical.")
+        return True
+
+    train_image_file_names, train_mask_file_names = get_file_names(train_root_path)
+    train_image_paths = [os.path.join(train_root_path, "images", n) for n in train_image_file_names]
+    train_mask_paths = [os.path.join(train_root_path, "masks", n) for n in train_mask_file_names]
+    train_file_paths = (train_image_paths, train_mask_paths)
+    if test_root_path:
+        test_image_file_names, test_mask_file_names = get_file_names(test_root_path)
+        test_image_paths = [os.path.join(test_root_path, "images", n) for n in test_image_file_names]
+        check_duplicates(train_image_paths, test_image_paths)
+        test_mask_paths = [os.path.join(test_root_path, "masks", n) for n in test_mask_file_names]
+        test_file_paths = (test_image_paths, test_mask_paths)
+
+        return train_file_paths, test_file_paths
+    
+    
+    return train_file_paths
+
 
 
 def init_log_dir(action, config):
     
     dataset_name = config["data_dir"].split(os.sep)[-1]
-    log_dir_name = action + "_" + dataset_name
+    current_time_stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir_name = current_time_stamp + "_" + action + "_" + dataset_name
 
     
     str_diffusion_steps = str(config["diffusion_steps"])
@@ -79,32 +144,59 @@ def get_num_running_configs():
 def main():
     print("CUDA available 1:", torch.cuda.is_available())
     
+    # Argparser for this main
     parser = argparse.ArgumentParser(
         description="""Meta-program to run Semantic Diffusion experiments.""")
-    
     parser.add_argument("action", choices=["train", "finetune", "sample", "test"], type=str, 
         help="""Controls which action the script should perform.""")
     parser.add_argument("-c", "--config", type=str, help="Path to configuration file.", required=True)
+    parser.add_argument("-s", "--seed", type=int, help="Random seed.", default=73)
 
-    
     args = parser.parse_args()
-
+    
+    #Load the input config
     config_in = read_config(args.config)
-    if args.action == "sample":
+
+    # Prepare the action
+    if args.action == "train":
+        image_file_paths, mask_file_paths = get_dataset_file_paths(os.path.join(config_in["data_dir"], "train"))
+        train_images, val_images, train_masks, val_masks = train_test_split(image_file_paths, mask_file_paths, test_size=0.2, random_state=args.seed)
+        train_file_paths = (train_images, train_masks)
+        val_file_paths = (val_images, val_masks)
+        
+        # Add defaults to config
+        config = get_training_defaults()
+        config.update(model_and_diffusion_defaults())
+        config.update(config_in)
+
+        #Manipulate config to have better control over training procedure
+        config["train_file_paths"] = train_file_paths
+        config["val_file_paths"] = val_file_paths
+
+
+
+
+    elif args.action == "sample":
         config = get_sampling_defaults()
         config.update(model_and_diffusion_defaults())
         config.update(config_in)
 
+    
+    
+    #Prepare log and config files
     log_dir = init_log_dir(args.action, config)
     remove_log_dir_afterwards = False
     config["log_dir"] = log_dir
     print("Logging into:", log_dir)
 
+    print("Running config for", args.action)
+    print(config)
     config_args = argparse.Namespace(**config)
-    
     tmp_config_path = os.path.join(os.path.dirname(__file__), args.action + "_" + str(get_num_running_configs()) + "_config_running.json")
     save_config(tmp_config_path, vars(config_args))
 
+
+    #Run the action
     try:
 
         if args.action in ["train", "finetune"]:
