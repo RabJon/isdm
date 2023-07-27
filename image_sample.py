@@ -6,6 +6,7 @@ numpy array. This can be used to produce samples for FID evaluation.
 import argparse
 import os
 
+
 from guided_diffusion.image_datasets import load_data
 
 from guided_diffusion import dist_util, logger
@@ -21,12 +22,14 @@ import torch.distributed as dist
 import torchvision as tv
 
 
-def main():
-    print("CUDA available 1:", th.cuda.is_available()) #this line makes the difference if CUDA is correctly detected or not
-    args = create_argparser().parse_args()
 
+def sample(args):
     dist_util.setup_dist()
-    logger.configure()
+    
+    if "log_dir" in vars(args):
+        logger.configure(args.log_dir)
+    else:
+        logger.configure()
 
     logger.log("creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(
@@ -60,12 +63,25 @@ def main():
     os.makedirs(label_path, exist_ok=True)
     sample_path = os.path.join(args.results_path, 'samples')
     os.makedirs(sample_path, exist_ok=True)
+    if args.num_classes > 2:
+        import numpy as np
+        import skimage.io as io
+        colored_labels_path = os.path.join(args.results_path, 'colored_labels')
+        os.makedirs(colored_labels_path, exist_ok=True)
+        mask_colors = np.array([
+            [0, 0, 0], [255, 255, 255], [1, 0, 103], [255,0,86], 
+            [158, 0, 142], [14, 76, 161], [255, 229, 2], 
+            [0, 95, 57], [0, 255, 0], [149, 0, 58], 
+            [255, 147, 126], [164, 36, 0]] + [[255,0,0]]*244, dtype=np.uint8)
+
+
 
     logger.log("sampling...")
     all_samples = []
     for i, (batch, cond) in enumerate(data):
         image = ((batch + 1.0) / 2.0).cuda()
         label = (cond['label_ori'].float() / 255.0).cuda()
+            
         model_kwargs = preprocess_input(cond, num_classes=args.num_classes)
 
         # set hyperparameter
@@ -94,6 +110,12 @@ def main():
             tv.utils.save_image(image[j], os.path.join(image_path, cond['path'][j].split('/')[-1].split('.')[0] + "_" + str(i) +'.png'))
             tv.utils.save_image(sample[j], os.path.join(sample_path, cond['path'][j].split('/')[-1].split('.')[0] + "_" + str(i) + '.png'))
             tv.utils.save_image(label[j], os.path.join(label_path, cond['path'][j].split('/')[-1].split('.')[0] + "_" + str(i) + '.png'))
+            if args.num_classes > 2:
+                colored_label = mask_colors[cond['label_ori'][j].cpu().numpy()]
+                save_path = os.path.join(colored_labels_path, cond['path'][j].split('/')[-1].split('.')[0] + "_" + str(i) + '.png')
+                io.imsave(save_path, colored_label, check_contrast=False)
+
+
 
         logger.log(f"created {len(all_samples) * args.batch_size} samples")
 
@@ -102,6 +124,14 @@ def main():
 
     dist.barrier()
     logger.log("sampling complete")
+
+
+def main():
+    print("CUDA available 1:", th.cuda.is_available()) #this line makes the difference if CUDA is correctly detected or not
+    args = create_argparser().parse_args()
+    sample(args)
+
+    
 
 
 def preprocess_input(data, num_classes):
@@ -132,7 +162,7 @@ def get_edges(t):
     return edge.float()
 
 
-def create_argparser():
+def get_sampling_defaults():
     defaults = dict(
         data_dir="",
         dataset_mode="",
@@ -145,6 +175,10 @@ def create_argparser():
         is_train=False,
         s=1.0
     )
+    return defaults
+
+def create_argparser():
+    defaults = get_sampling_defaults()
     defaults.update(model_and_diffusion_defaults())
     parser = argparse.ArgumentParser()
     add_dict_to_argparser(parser, defaults)

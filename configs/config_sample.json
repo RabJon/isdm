@@ -1,0 +1,31 @@
+{
+    "root_log_dir": "OUTPUT/",
+    
+    "data_dir": "./data/lemon-dataset-multi-class",
+    "dataset_mode": "lemon-multi-class",
+    
+    "lr": 1e-4,
+    "batch_size": 4,
+    "diffusion_steps": 50,
+    "image_size": 256,
+    "learn_sigma": true,
+    "num_classes": 11,
+    "noise_schedule": "linear",
+    "class_cond": true,
+    
+    "num_channels": 256,
+    "num_head_channels": 64,
+    "num_res_blocks": 2,
+    "attention_resolutions": "32,16,8",
+    "resblock_updown": true,
+    "use_fp16": true,
+    "use_scale_shift_norm": true,
+    "no_instance": true,
+
+
+    "num_samples": 8,
+    "model_path" : "OUTPUT/lemon-dataset-multi-class_d=1000_class_cond=False_num_classes=11/ema_0.9999_020000.pt",
+    "s" : 1.5,
+    "results_path": ""
+
+}

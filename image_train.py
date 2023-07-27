@@ -18,12 +18,13 @@ from guided_diffusion.train_util import TrainLoop
 import torch
 
 
-def main():
-    print("CUDA available 1:", torch.cuda.is_available(), "device_count:", torch.cuda.device_count()) #this line makes the difference if CUDA is correctly detected or not
-    args = create_argparser().parse_args()
-
+def train(args):
     dist_util.setup_dist()
-    logger.configure()
+    
+    if "log_dir" in vars(args):
+        logger.configure(args.log_dir)
+    else:
+        logger.configure()
 
     logger.log("creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(
@@ -62,6 +63,16 @@ def main():
         weight_decay=args.weight_decay,
         lr_anneal_steps=args.lr_anneal_steps,
     ).run_loop()
+
+
+
+
+def main():
+    print("CUDA available 1:", torch.cuda.is_available(), "device_count:", torch.cuda.device_count()) #this line makes the difference if CUDA is correctly detected or not
+    args = create_argparser().parse_args()
+    train(args)
+
+    
 
 
 def create_argparser():
