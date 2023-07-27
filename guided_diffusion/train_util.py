@@ -174,10 +174,10 @@ class TrainLoop:
         if self.val_data:
             writer = SummaryWriter()
             epoch = 0
+            min_val_loss = None
             while (
                 (not self.lr_anneal_steps or self.step + self.resume_step < self.lr_anneal_steps) and (epoch < self.max_epochs)
             ):
-                min_val_loss = None
                 epoch_train_loss = None
                 epoch_val_loss = None
                 with th.inference_mode(False):
