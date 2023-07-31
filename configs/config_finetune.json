@@ -21,6 +21,9 @@
     "use_fp16": true,
     "use_scale_shift_norm": true,
     "use_checkpoint": true,
-    "no_instance": true
+    "no_instance": true,
 
+
+    "drop_rate": 0.2,
+    "resume_checkpoint" : "OUTPUT/20230727-214914_train_lemon-dataset-multi-class_d=1000_c=11/model035690.pt"
 }

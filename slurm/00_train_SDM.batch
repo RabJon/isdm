@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=Sample-SDM
-#SBATCH --output=Sample-SDM-%j.out
-#SBATCH --error=Sample-SDM-%j.err
+#SBATCH --job-name=SDM-Train
+#SBATCH --output=SDM-Train-%j.out
+#SBATCH --error=SDM-Train-%j.err
 #SBATCH --partition=gpu-low
 #SBATCH --account=standard
-#SBATCH --time=00:30:00
-#SBATCH --gres=gpu:v100
-#SBATCH --mem=8G
+#SBATCH --time=3-00:00:00
+#SBATCH --gres=gpu:a100_3g.39gb
+#SBATCH --mem=30G
 
 
 echo "Starting execution of SDM Sampling ..."
@@ -18,7 +18,7 @@ module load anaconda3/2022.05-gcc-12.1.0-linux-ubuntu22.04-x86_64
 
 conda activate sdm
 
-python main.py sample -c "configs/config_sample.json"
+python main.py train -c "configs/config_train.json"
 
 
 echo "Execution of SDM Sampling terminated!"
