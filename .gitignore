@@ -48,3 +48,5 @@ data/
 *.out
 *.err
 tmp_pytorch_cuda_test.py
+runs/
+*config_running.json
