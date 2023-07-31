@@ -200,6 +200,7 @@ def main():
     try:
 
         if args.action in ["train", "finetune"]:
+            print("CUDA available 2:", torch.cuda.is_available())#print needed to have CUDA available
             train(config_args)
             
         elif args.action == "sample":

@@ -1,8 +1,10 @@
+from torch.utils.tensorboard import SummaryWriter
 import copy
 import functools
 import os
 
 import blobfile as bf
+
 import torch as th
 import torch.distributed as dist
 from torch.nn.parallel.distributed import DistributedDataParallel as DDP
@@ -13,7 +15,7 @@ from .fp16_util import MixedPrecisionTrainer
 from .nn import update_ema
 from .resample import LossAwareSampler, UniformSampler
 
-from torch.utils.tensorboard import SummaryWriter
+
 
 # For ImageNet experiments, this was a good default value.
 # We found that the lg_loss_scale quickly climbed to
@@ -130,12 +132,19 @@ class TrainLoop:
         if resume_checkpoint:
             self.resume_step = parse_resume_step_from_filename(resume_checkpoint)
             if dist.get_rank() == 0:
+                print("CUDA device count:", th.cuda.device_count())
                 logger.log(f"loading model from checkpoint: {resume_checkpoint}...")
+                # self.model.load_state_dict(
+                #     th.load(
+                #         resume_checkpoint, map_location=dist_util.dev()
+                #     )
+                # )
                 self.model.load_state_dict(
                     th.load(
-                        resume_checkpoint, map_location=dist_util.dev()
+                        resume_checkpoint, map_location='cpu'
                     )
                 )
+                self.model.to(dist_util.dev())
 
         dist_util.sync_params(self.model.parameters())
 
@@ -147,25 +156,45 @@ class TrainLoop:
         if ema_checkpoint:
             if dist.get_rank() == 0:
                 logger.log(f"loading EMA from checkpoint: {ema_checkpoint}...")
-                state_dict = th.load(
-                    ema_checkpoint, map_location=dist_util.dev()
-                )
+                # state_dict = th.load(
+                #     ema_checkpoint, map_location=dist_util.dev()
+                # )
+                state_dict = th.load(ema_checkpoint, map_location="cpu")
                 ema_params = self.mp_trainer.state_dict_to_master_params(state_dict)
+                ema_params = [param.to(dist_util.dev()) for param in ema_params]
 
+        print("dist util device:", dist_util.dev())
         dist_util.sync_params(ema_params)
         return ema_params
 
     def _load_optimizer_state(self):
+        def optimizer_to(optim, device):
+            for param in optim.state.values():
+                # Not sure there are any global tensors in the state dict
+                if isinstance(param, th.Tensor):
+                    param.data = param.data.to(device)
+                    if param._grad is not None:
+                        param._grad.data = param._grad.data.to(device)
+                elif isinstance(param, dict):
+                    for subparam in param.values():
+                        if isinstance(subparam, th.Tensor):
+                            subparam.data = subparam.data.to(device)
+                            if subparam._grad is not None:
+                                subparam._grad.data = subparam._grad.data.to(device)
+        
+        
         main_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
         opt_checkpoint = bf.join(
             bf.dirname(main_checkpoint), f"opt{self.resume_step:06}.pt"
         )
         if bf.exists(opt_checkpoint):
             logger.log(f"loading optimizer state from checkpoint: {opt_checkpoint}")
-            state_dict = th.load(
-                opt_checkpoint, map_location=dist_util.dev()
-            )
+            # state_dict = th.load(
+            #     opt_checkpoint, map_location=dist_util.dev()
+            # )
+            state_dict = th.load(opt_checkpoint, map_location="cpu")
             self.opt.load_state_dict(state_dict)
+            optimizer_to(self.opt, dist_util.dev())
 
             if self.opt.param_groups[0]['lr'] != self.lr:
                 self.opt.param_groups[0]['lr'] = self.lr
