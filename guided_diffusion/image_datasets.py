@@ -7,6 +7,9 @@ import blobfile as bf
 from mpi4py import MPI
 import numpy as np
 from torch.utils.data import DataLoader, Dataset
+from torchvision.datasets import VOCSegmentation
+import torchvision.transforms.functional as tf
+from torchvision.transforms import InterpolationMode
 
 
 def load_data(
@@ -58,11 +61,13 @@ def load_data(
         all_files = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'images'))
         classes = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'labels'))
         instances = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'labels'))
-    elif dataset_mode == "lemon-binary":
+    elif dataset_mode in ["lemon-binary", "lemon-multi-class"]:
         all_files = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'images'))
-        classes = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'masks'))
+        if class_cond:
+            classes = _list_image_files_recursively(os.path.join(data_dir, 'train' if is_train else 'test', 'masks'))
+        else:
+            classes = None
         instances = None
-    
     else:
         raise NotImplementedError('{} not implemented'.format(dataset_mode))
 
@@ -89,8 +94,75 @@ def load_data(
         loader = DataLoader(
             dataset, batch_size=batch_size, shuffle=True, num_workers=1, drop_last=True
         )
-    while True:
+    while True: #TODO: this "occuldes" the epoch, we don't know when the epoch ends because of this
         yield from loader
+
+
+def load_data_from_file_paths(
+    *,
+    dataset_mode,
+    file_paths,
+    batch_size,
+    image_size,
+    class_cond=False,
+    deterministic=False,
+    random_crop=True,
+    random_flip=True
+    ):
+
+    if dataset_mode in ["lemon-binary", "lemon-multi-class"]:
+        image_paths = file_paths[0]
+        mask_paths = file_paths[1]
+        if class_cond:
+            classes = mask_paths
+        else:
+            classes = None
+        instances = None
+
+        dataset = ImageDataset(
+            dataset_mode,
+            image_size,
+            image_paths,
+            classes=classes,
+            instances=instances,
+            shard=MPI.COMM_WORLD.Get_rank(),
+            num_shards=MPI.COMM_WORLD.Get_size(),
+            random_crop=random_crop,
+            random_flip=random_flip,
+        )
+
+    elif dataset_mode == "voc":
+        def transforms_mask_image(x, y):
+            x_t = tf.resize(x, (h, w), interpolation=InterpolationMode.BICUBIC)
+            y_t = tf.resize(y, (h, w), interpolation=InterpolationMode.NEAREST)
+            
+            return x_t, y_t 
+        
+        
+        h, w = image_size, image_size
+        
+        dataset = VOCSegmentation(
+            "data/VOCdevkit/VOC2012",
+            image_set=file_paths,
+            transforms=transforms_mask_image
+        )
+
+    else:
+        raise NotImplementedError('{} not implemented'.format(dataset_mode))
+    
+    
+
+    if deterministic:
+        loader = DataLoader(
+            dataset, batch_size=batch_size, shuffle=False, num_workers=1, drop_last=True
+        )
+    else:
+        loader = DataLoader(
+            dataset, batch_size=batch_size, shuffle=True, num_workers=1, drop_last=True
+        )
+    
+    return loader
+
 
 
 def _list_image_files_recursively(data_dir):
@@ -140,11 +212,14 @@ class ImageDataset(Dataset):
         pil_image = pil_image.convert("RGB")
 
         out_dict = {}
-        class_path = self.local_classes[idx]
-        with bf.BlobFile(class_path, "rb") as f:
-            pil_class = Image.open(f)
-            pil_class.load()
-        pil_class = pil_class.convert("L")
+        if self.local_classes is not None:
+            class_path = self.local_classes[idx]
+            with bf.BlobFile(class_path, "rb") as f:
+                pil_class = Image.open(f)
+                pil_class.load()
+            pil_class = pil_class.convert("L")
+        else:
+            pil_class = None
         # if not np.array_equal(np.unique(np.array(pil_class)), np.array([0,255])):
         #         raise Exception("Resizing mask did not work properly:", np.unique(np.array(pil_class)), class_path)
 
@@ -157,10 +232,13 @@ class ImageDataset(Dataset):
         else:
             pil_instance = None
 
-        if self.dataset_mode in ["cityscapes", "lemon-binary"]:
-            arr_image, arr_class, arr_instance = resize_arr([pil_image, pil_class, pil_instance], self.resolution)
+        if self.dataset_mode in ["cityscapes", "lemon-binary", "lemon-multi-class"]:
+            arr_image, arr_class, arr_instance = resize_arr([pil_image, pil_class, pil_instance], self.resolution, keep_aspect=False)
+            # arr_image, arr_class, arr_instance = resize_arr([pil_image, pil_class, pil_instance], self.resolution)
             # if not np.array_equal(np.unique(arr_class), np.array([0,255])):
             #     raise Exception("Resizing mask did not work properly:", np.unique(arr_class))
+            if arr_class is None:
+                arr_class = np.zeros(arr_image.shape[:-1], dtype=np.uint8) #conditioning with all-zero masks == no conditioning
                               
         else:
             if self.is_train:
@@ -188,6 +266,7 @@ class ImageDataset(Dataset):
             arr_class[arr_class == 255] = 182
         elif self.dataset_mode == "lemon-binary":
             arr_class[arr_class == 255] = 1 #make it array consisting of 0 and 1
+        
 
         # if not np.array_equal(np.unique(arr_class), np.array([0,1])):
         #     raise Exception("Resizing mask did not work properly:", np.unique(arr_class))
@@ -219,12 +298,13 @@ def resize_arr(pil_list, image_size, keep_aspect=True):
     else:
         pil_image = pil_image.resize((image_size, image_size), resample=Image.BICUBIC)
 
-    pil_class = pil_class.resize(pil_image.size, resample=Image.NEAREST)
+    if pil_class is not None:
+        pil_class = pil_class.resize(pil_image.size, resample=Image.NEAREST)
     if pil_instance is not None:
         pil_instance = pil_instance.resize(pil_image.size, resample=Image.NEAREST)
 
     arr_image = np.array(pil_image)
-    arr_class = np.array(pil_class)
+    arr_class = np.array(pil_class) if pil_class is not None else None
     arr_instance = np.array(pil_instance) if pil_instance is not None else None
     return arr_image, arr_class, arr_instance
 

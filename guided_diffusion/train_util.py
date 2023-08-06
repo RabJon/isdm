@@ -1,8 +1,10 @@
+from torch.utils.tensorboard import SummaryWriter
 import copy
 import functools
 import os
 
 import blobfile as bf
+
 import torch as th
 import torch.distributed as dist
 from torch.nn.parallel.distributed import DistributedDataParallel as DDP
@@ -12,6 +14,8 @@ from . import dist_util, logger
 from .fp16_util import MixedPrecisionTrainer
 from .nn import update_ema
 from .resample import LossAwareSampler, UniformSampler
+
+
 
 # For ImageNet experiments, this was a good default value.
 # We found that the lg_loss_scale quickly climbed to
@@ -40,6 +44,8 @@ class TrainLoop:
         schedule_sampler=None,
         weight_decay=0.0,
         lr_anneal_steps=0,
+        max_epochs = 1000,
+        val_data = None
     ):
         print("Train util LINE 44, CUDA available:", th.cuda.is_available(), "num CUDA devices:", th.cuda.device_count()) #this line makes the difference if CUDA is correctly detected or not
         self.model = model
@@ -63,7 +69,11 @@ class TrainLoop:
         self.schedule_sampler = schedule_sampler or UniformSampler(diffusion)
         self.weight_decay = weight_decay
         self.lr_anneal_steps = lr_anneal_steps
+        self.max_epochs = max_epochs
+        self.val_data = val_data
 
+
+        self.last_saved_files = []
         self.step = 0
         self.resume_step = 0
         self.global_batch = self.batch_size * dist.get_world_size()
@@ -122,12 +132,19 @@ class TrainLoop:
         if resume_checkpoint:
             self.resume_step = parse_resume_step_from_filename(resume_checkpoint)
             if dist.get_rank() == 0:
+                print("CUDA device count:", th.cuda.device_count())
                 logger.log(f"loading model from checkpoint: {resume_checkpoint}...")
+                # self.model.load_state_dict(
+                #     th.load(
+                #         resume_checkpoint, map_location=dist_util.dev()
+                #     )
+                # )
                 self.model.load_state_dict(
                     th.load(
-                        resume_checkpoint, map_location=dist_util.dev()
+                        resume_checkpoint, map_location='cpu'
                     )
                 )
+                self.model.to(dist_util.dev())
 
         dist_util.sync_params(self.model.parameters())
 
@@ -139,48 +156,116 @@ class TrainLoop:
         if ema_checkpoint:
             if dist.get_rank() == 0:
                 logger.log(f"loading EMA from checkpoint: {ema_checkpoint}...")
-                state_dict = th.load(
-                    ema_checkpoint, map_location=dist_util.dev()
-                )
+                # state_dict = th.load(
+                #     ema_checkpoint, map_location=dist_util.dev()
+                # )
+                state_dict = th.load(ema_checkpoint, map_location="cpu")
                 ema_params = self.mp_trainer.state_dict_to_master_params(state_dict)
+                ema_params = [param.to(dist_util.dev()) for param in ema_params]
 
+        print("dist util device:", dist_util.dev())
         dist_util.sync_params(ema_params)
         return ema_params
 
     def _load_optimizer_state(self):
+        def optimizer_to(optim, device):
+            for param in optim.state.values():
+                # Not sure there are any global tensors in the state dict
+                if isinstance(param, th.Tensor):
+                    param.data = param.data.to(device)
+                    if param._grad is not None:
+                        param._grad.data = param._grad.data.to(device)
+                elif isinstance(param, dict):
+                    for subparam in param.values():
+                        if isinstance(subparam, th.Tensor):
+                            subparam.data = subparam.data.to(device)
+                            if subparam._grad is not None:
+                                subparam._grad.data = subparam._grad.data.to(device)
+        
+        
         main_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
         opt_checkpoint = bf.join(
             bf.dirname(main_checkpoint), f"opt{self.resume_step:06}.pt"
         )
         if bf.exists(opt_checkpoint):
             logger.log(f"loading optimizer state from checkpoint: {opt_checkpoint}")
-            state_dict = th.load(
-                opt_checkpoint, map_location=dist_util.dev()
-            )
+            # state_dict = th.load(
+            #     opt_checkpoint, map_location=dist_util.dev()
+            # )
+            state_dict = th.load(opt_checkpoint, map_location="cpu")
             self.opt.load_state_dict(state_dict)
+            optimizer_to(self.opt, dist_util.dev())
 
             if self.opt.param_groups[0]['lr'] != self.lr:
                 self.opt.param_groups[0]['lr'] = self.lr
 
     def run_loop(self):
-        while (
-            not self.lr_anneal_steps
-            or self.step + self.resume_step < self.lr_anneal_steps
-        ):
-            batch, cond = next(self.data)
-            cond = self.preprocess_input(cond)
-            self.run_step(batch, cond)
-            if self.step % self.log_interval == 0:
-                logger.dumpkvs()
-            if self.step % self.save_interval == 0:
+        if self.val_data:
+            writer = SummaryWriter()
+            epoch = 0
+            min_val_loss = None
+            while (
+                (not self.lr_anneal_steps or self.step + self.resume_step < self.lr_anneal_steps) and (epoch < self.max_epochs)
+            ):
+                epoch_train_loss = None
+                epoch_val_loss = None
+                with th.inference_mode(False):
+                    for batch, cond in self.data:
+                        cond = self.preprocess_input(cond)
+                        self.run_step(batch, cond)
+                        if self.step % self.log_interval == 0:
+                            logger.dumpkvs()
+                        
+                        step_loss = self.run_val_step(batch, cond)
+                        if not epoch_train_loss:
+                            epoch_train_loss = step_loss.detach().clone()
+                        else:
+                            epoch_train_loss += step_loss.detach()
+                        
+                        self.step += 1
+
+                    for batch, cond in self.val_data:
+                        cond = self.preprocess_input(cond)
+                        step_loss = self.run_val_step(batch, cond)
+
+                        if not epoch_val_loss:
+                            epoch_val_loss = step_loss.detach().clone()
+                        else:
+                            epoch_val_loss += step_loss.detach()
+                
+                epoch_train_loss /= len(self.data)
+                epoch_val_loss /= len(self.val_data)
+
+                writer.add_scalar("Loss/train", epoch_train_loss, epoch)
+                writer.add_scalar("Loss/val", epoch_val_loss, epoch)
+                
+                
+                if (min_val_loss is None) or (epoch_val_loss < min_val_loss):
+                    print("Epoch:", epoch, "Step:", self.step,"Validation loss improved from", min_val_loss, "to", epoch_val_loss, "Saving new checkpoints!")
+                    min_val_loss = epoch_val_loss
+                    self.save(delete_last_saved=True)
+                epoch += 1
+                
+
+
+        else: #legacy loop (runs infinitly, doesn't know about epochs nor validation)
+            while (
+                (not self.lr_anneal_steps or self.step + self.resume_step < self.lr_anneal_steps)
+            ):
+                batch, cond = next(self.data)
+                cond = self.preprocess_input(cond)
+                self.run_step(batch, cond)
+                if self.step % self.log_interval == 0:
+                    logger.dumpkvs()
+                if self.step % self.save_interval == 0:
+                    self.save()
+                    # Run for a finite amount of time in integration tests.
+                    if os.environ.get("DIFFUSION_TRAINING_TEST", "") and self.step > 0:
+                        return
+                self.step += 1
+            # Save the last checkpoint if it wasn't already saved.
+            if (self.step - 1) % self.save_interval != 0:
                 self.save()
-                # Run for a finite amount of time in integration tests.
-                if os.environ.get("DIFFUSION_TRAINING_TEST", "") and self.step > 0:
-                    return
-            self.step += 1
-        # Save the last checkpoint if it wasn't already saved.
-        if (self.step - 1) % self.save_interval != 0:
-            self.save()
 
     def run_step(self, batch, cond):
         self.forward_backward(batch, cond)
@@ -189,6 +274,42 @@ class TrainLoop:
             self._update_ema()
         self._anneal_lr()
         self.log_step()
+    
+    def run_val_step(self, batch, cond):
+        with th.inference_mode():
+            step_loss = None
+            for i in range(0, batch.shape[0], self.microbatch):
+                micro = batch[i : i + self.microbatch].to(dist_util.dev())
+                micro_cond = {
+                    k: v[i : i + self.microbatch].to(dist_util.dev())
+                    for k, v in cond.items()
+                }
+                last_batch = (i + self.microbatch) >= batch.shape[0]
+                t, weights = self.schedule_sampler.sample(micro.shape[0], dist_util.dev())
+
+                compute_losses = functools.partial(
+                    self.diffusion.training_losses,
+                    self.ddp_model,
+                    micro,
+                    t,
+                    model_kwargs=micro_cond,
+                )
+
+                if last_batch or not self.use_ddp:
+                    losses = compute_losses()
+                else:
+                    with self.ddp_model.no_sync():
+                        losses = compute_losses()
+
+                loss = (losses["loss"] * weights).mean()
+                if step_loss:
+                    step_loss += loss
+                else:
+                    step_loss = loss.clone()
+            
+            return step_loss / batch.shape[0]
+
+
 
     def forward_backward(self, batch, cond):
         self.mp_trainer.zero_grad()
@@ -242,7 +363,8 @@ class TrainLoop:
         logger.logkv("step", self.step + self.resume_step)
         logger.logkv("samples", (self.step + self.resume_step + 1) * self.global_batch)
 
-    def save(self):
+    def save(self, delete_last_saved=False):
+        
         def save_checkpoint(rate, params):
             state_dict = self.mp_trainer.master_params_to_state_dict(params)
             if dist.get_rank() == 0:
@@ -251,20 +373,30 @@ class TrainLoop:
                     filename = f"model{(self.step+self.resume_step):06d}.pt"
                 else:
                     filename = f"ema_{rate}_{(self.step+self.resume_step):06d}.pt"
-                with bf.BlobFile(bf.join(get_blob_logdir(), filename), "wb") as f:
+                file_path = bf.join(get_blob_logdir(), filename)
+                with bf.BlobFile(file_path, "wb") as f:
                     th.save(state_dict, f)
-
+                
+                nonlocal last_saved_files
+                last_saved_files += [file_path]
+        
+        
+        if delete_last_saved:
+            for f in self.last_saved_files:
+                os.remove(f)
+        
+        last_saved_files = []
         save_checkpoint(0, self.mp_trainer.master_params)
         for rate, params in zip(self.ema_rate, self.ema_params):
             save_checkpoint(rate, params)
 
         if dist.get_rank() == 0:
-            with bf.BlobFile(
-                bf.join(get_blob_logdir(), f"opt{(self.step+self.resume_step):06d}.pt"),
-                "wb",
-            ) as f:
+            file_path = bf.join(get_blob_logdir(), f"opt{(self.step+self.resume_step):06d}.pt")
+            with bf.BlobFile(file_path,"wb") as f:
                 th.save(self.opt.state_dict(), f)
+            last_saved_files += [file_path]
 
+        self.last_saved_files = last_saved_files
         dist.barrier()
 
     def preprocess_input(self, data):

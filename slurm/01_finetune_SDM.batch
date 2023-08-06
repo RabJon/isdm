@@ -1,0 +1,24 @@
+#!/bin/bash
+#SBATCH --job-name=SDM-Finetune
+#SBATCH --output=SDM-Finetune-%j.out
+#SBATCH --error=SDM-Finetune-%j.err
+#SBATCH --partition=gpu-low
+#SBATCH --account=standard
+#SBATCH --time=2-00:00:00
+#SBATCH --gres=gpu:a100_3g.39gb
+#SBATCH --mem=30G
+
+
+echo "Starting execution of SDM Finetuning ..."
+
+#source /opt/packages/anaconda3/etc/profile.d/conda.sh
+. /etc/profile #to source the module command
+module load python/3.10.8-gcc-12.1.0-linux-ubuntu22.04-x86_64
+module load anaconda3/2022.05-gcc-12.1.0-linux-ubuntu22.04-x86_64
+
+conda activate sdm
+
+python main.py train -c "configs/config_finetune.json"
+
+
+echo "Execution of SDM Finetuning terminated!"
