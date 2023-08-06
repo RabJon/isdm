@@ -45,6 +45,7 @@ test/data/legacy_serialized.pt
 .idea
 
 data/
+generated_data/
 *.out
 *.err
 tmp_pytorch_cuda_test.py
