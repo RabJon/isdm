@@ -7,6 +7,9 @@ import blobfile as bf
 from mpi4py import MPI
 import numpy as np
 from torch.utils.data import DataLoader, Dataset
+from torchvision.datasets import VOCSegmentation
+import torchvision.transforms.functional as tf
+from torchvision.transforms import InterpolationMode
 
 
 def load_data(
@@ -65,7 +68,6 @@ def load_data(
         else:
             classes = None
         instances = None
-    
     else:
         raise NotImplementedError('{} not implemented'.format(dataset_mode))
 
@@ -116,21 +118,39 @@ def load_data_from_file_paths(
         else:
             classes = None
         instances = None
-    
+
+        dataset = ImageDataset(
+            dataset_mode,
+            image_size,
+            image_paths,
+            classes=classes,
+            instances=instances,
+            shard=MPI.COMM_WORLD.Get_rank(),
+            num_shards=MPI.COMM_WORLD.Get_size(),
+            random_crop=random_crop,
+            random_flip=random_flip,
+        )
+
+    elif dataset_mode == "voc":
+        def transforms_mask_image(x, y):
+            x_t = tf.resize(x, (h, w), interpolation=InterpolationMode.BICUBIC)
+            y_t = tf.resize(y, (h, w), interpolation=InterpolationMode.NEAREST)
+            
+            return x_t, y_t 
+        
+        
+        h, w = image_size, image_size
+        
+        dataset = VOCSegmentation(
+            "data/VOCdevkit/VOC2012",
+            image_set=file_paths,
+            transforms=transforms_mask_image
+        )
+
     else:
         raise NotImplementedError('{} not implemented'.format(dataset_mode))
     
-    dataset = ImageDataset(
-        dataset_mode,
-        image_size,
-        image_paths,
-        classes=classes,
-        instances=instances,
-        shard=MPI.COMM_WORLD.Get_rank(),
-        num_shards=MPI.COMM_WORLD.Get_size(),
-        random_crop=random_crop,
-        random_flip=random_flip,
-    )
+    
 
     if deterministic:
         loader = DataLoader(
