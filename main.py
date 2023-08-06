@@ -5,6 +5,7 @@ from shutil import copyfile, rmtree, move
 import filecmp
 from sklearn.model_selection import train_test_split
 from datetime import datetime
+import numpy as np
 
 from guided_diffusion.script_util import model_and_diffusion_defaults
 
@@ -12,6 +13,8 @@ import torch
 
 from image_train import train, get_training_defaults
 from image_sample import sample, get_sampling_defaults
+
+from balancer import balance
 
 
 def read_config(config_path):
@@ -159,11 +162,18 @@ def main():
 
     # Prepare the action
     if args.action == "train":
-        image_file_paths, mask_file_paths = get_dataset_file_paths(os.path.join(config_in["data_dir"], "train"))
-        train_images, val_images, train_masks, val_masks = train_test_split(image_file_paths, mask_file_paths, test_size=0.2, random_state=args.seed)
-        train_file_paths = (train_images, train_masks)
-        val_file_paths = (val_images, val_masks)
-        
+
+        if config_in["dataset_mode"] == "voc": #torchvision has a proper voc integration, nothing needs to be prepared
+            print("Using PASCAL VOC Dataset")
+            #These two need to be added as placeholders, such that the right dataloader is used
+            train_file_paths = "train"
+            val_file_paths = "trainval"
+        else:
+            image_file_paths, mask_file_paths = get_dataset_file_paths(os.path.join(config_in["data_dir"], "train"))
+            train_images, val_images, train_masks, val_masks = train_test_split(image_file_paths, mask_file_paths, test_size=0.2, random_state=args.seed)
+            train_file_paths = (train_images, train_masks)
+            val_file_paths = (val_images, val_masks)
+            
         # Add defaults to config
         config = get_training_defaults()
         config.update(model_and_diffusion_defaults())
@@ -173,13 +183,21 @@ def main():
         config["train_file_paths"] = train_file_paths
         config["val_file_paths"] = val_file_paths
 
-
-
-
     elif args.action == "sample":
         config = get_sampling_defaults()
         config.update(model_and_diffusion_defaults())
         config.update(config_in)
+
+        #Manipulate config to have better control over sampling procedure
+        if "balance_args" in config: #balancing is used
+            image_file_paths, mask_file_paths = get_dataset_file_paths(os.path.join(config_in["data_dir"], "train"))
+            balanced_indices = balance(mask_file_paths, config["num_samples"], **config["balance_args"])
+            image_file_paths = np.array(image_file_paths)[balanced_indices]
+            mask_file_paths = np.array(mask_file_paths)[balanced_indices]
+            config["file_paths"] = (image_file_paths, mask_file_paths)
+        else:
+            config["file_paths"] = None 
+
 
     
     
@@ -199,7 +217,7 @@ def main():
     #Run the action
     try:
 
-        if args.action in ["train", "finetune"]:
+        if args.action == "train":
             print("CUDA available 2:", torch.cuda.is_available())#print needed to have CUDA available
             train(config_args)
             

@@ -7,7 +7,7 @@ import argparse
 import os
 
 
-from guided_diffusion.image_datasets import load_data
+from guided_diffusion.image_datasets import load_data, load_data_from_file_paths
 
 from guided_diffusion import dist_util, logger
 from guided_diffusion.script_util import (
@@ -41,6 +41,31 @@ def sample(args):
     model.to(dist_util.dev())
 
     logger.log("creating data loader...")
+
+    # if args.file_paths:
+    #     data = load_data_from_file_paths(
+    #         dataset_mode=args.dataset_mode,
+    #         file_paths=args.val_file_paths,
+    #         batch_size=args.batch_size,
+    #         image_size=args.image_size,
+    #         class_cond=args.class_cond,
+    #         random_crop=False,
+    #         random_flip=False,
+    #         deterministic=True
+    #     )
+    # else:
+    #     data = load_data(
+    #         dataset_mode=args.dataset_mode,
+    #         data_dir=args.data_dir,
+    #         batch_size=args.batch_size,
+    #         image_size=args.image_size,
+    #         class_cond=args.class_cond,
+    #         deterministic=True,
+    #         random_crop=False,
+    #         random_flip=False,
+    #         is_train=True #orig is False: original uses Test set for sampling, which is not what I want ;(
+    #     )
+
     data = load_data(
         dataset_mode=args.dataset_mode,
         data_dir=args.data_dir,
@@ -136,12 +161,14 @@ def main():
 
 def preprocess_input(data, num_classes):
     # move to GPU and change data types
-    data['label'] = data['label'].long()
+    # data['label'] = data['label'].long()
+    data['label'] = data['label'].cuda().long()
 
     # create one-hot label map
     label_map = data['label']
     bs, _, h, w = label_map.size()
-    input_label = th.FloatTensor(bs, num_classes, h, w).zero_()
+    # input_label = th.FloatTensor(bs, num_classes, h, w).zero_()
+    input_label = th.cuda.FloatTensor(bs, num_classes, h, w).zero_()
     input_semantics = input_label.scatter_(1, label_map, 1.0)
 
     # concatenate instance map if it exists
