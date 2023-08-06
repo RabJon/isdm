@@ -4,15 +4,18 @@
 #SBATCH --error=Sample-SDM-%j.err
 #SBATCH --partition=gpu-low
 #SBATCH --account=standard
-#SBATCH --time=00:30:00
-#SBATCH --gres=gpu:v100
+#SBATCH --time=4-00:00:00
+#SBATCH --gres=gpu:a100_1g.10gb
 #SBATCH --mem=8G
 
+
+#gres=gpu:a100_1g.10gb
+#gres=gpu:v100
 
 echo "Starting execution of SDM Sampling ..."
 
 #source /opt/packages/anaconda3/etc/profile.d/conda.sh
-. /etc/profile #to source the module command
+#. /etc/profile #to source the module command
 module load python/3.10.8-gcc-12.1.0-linux-ubuntu22.04-x86_64
 module load anaconda3/2022.05-gcc-12.1.0-linux-ubuntu22.04-x86_64
 
