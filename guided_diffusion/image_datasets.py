@@ -138,11 +138,11 @@ def load_data_from_file_paths(
             
             return x_t, y_t 
         
-        
+        print("Loading PASCAL VOC dataset...")
         h, w = image_size, image_size
         
         dataset = VOCSegmentation(
-            "data/VOCdevkit/VOC2012",
+            "/home/clusterusers/jorabensteiner/Thesis/sdm/data/VOCdevkit/VOC2012",
             image_set=file_paths,
             transforms=transforms_mask_image
         )

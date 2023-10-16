@@ -1,26 +1,24 @@
 {
-    "root_log_dir": "OUTPUT/",
-    
-    "data_dir": "./data/lemon-dataset-multi-class",
-    "dataset_mode": "lemon-multi-class",
-    
-    "lr": 1e-4,
-    "batch_size": 4,
-    "diffusion_steps": 1000,
-    "image_size": 256,
-    "learn_sigma": true,
-    "num_classes": 11,
-    "noise_schedule": "linear",
-    "class_cond": true,
-    
-    "num_channels": 256,
-    "num_head_channels": 64,
-    "num_res_blocks": 2,
-    "attention_resolutions": "32,16,8",
-    "resblock_updown": true,
-    "use_fp16": true,
-    "use_scale_shift_norm": true,
-    "use_checkpoint": true,
-    "no_instance": true
-
+    "root_log_dir": "OUTPUT/", 
+    "data_dir": "/data/users/jorabensteiner/console-sliced", 
+    "dataset_mode": "lemon-multi-class", 
+    "lr": 0.0001, 
+    "batch_size": 32, 
+    "diffusion_steps": 1000, 
+    "image_size": 256, 
+    "learn_sigma": true, 
+    "num_classes": 6, 
+    "noise_schedule": "linear", 
+    "class_cond": true, 
+    "num_channels": 256, 
+    "num_head_channels": 64, 
+    "num_res_blocks": 2, 
+    "attention_resolutions": "32,16,8", 
+    "resblock_updown": true, 
+    "use_fp16": true, 
+    "use_scale_shift_norm": true, 
+    "use_checkpoint": true, 
+    "no_instance": true, 
+    "weights_decay": 1e-05,
+    "resume_checkpoint": "OUTPUT/20230908-225244_train_console-sliced_d=1000_c=6/model037944.pt"
 }

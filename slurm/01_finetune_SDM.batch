@@ -4,9 +4,9 @@
 #SBATCH --error=SDM-Finetune-%j.err
 #SBATCH --partition=gpu-low
 #SBATCH --account=standard
-#SBATCH --time=2-00:00:00
-#SBATCH --gres=gpu:a100_3g.39gb
-#SBATCH --mem=30G
+#SBATCH --time=1-00:00:00
+#SBATCH --gres=gpu:v100
+#SBATCH --mem=39G
 
 
 echo "Starting execution of SDM Finetuning ..."

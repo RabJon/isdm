@@ -4,12 +4,18 @@
 #SBATCH --error=SDM-Train-%j.err
 #SBATCH --partition=gpu-low
 #SBATCH --account=standard
-#SBATCH --time=3-00:00:00
-#SBATCH --gres=gpu:a100_3g.39gb
-#SBATCH --mem=30G
+#SBATCH --time=2-00:00:00
+#SBATCH --gres=gpu:a100-sxm4-80gb
+#SBATCH --mem=80G
 
 
-echo "Starting execution of SDM Sampling ..."
+
+#select node with -> SBATCH --nodelist=hpcsgn[04]
+#--gres=gpu:a100-sxm4-80gb 
+#--gres=gpu:v100
+#--gres=gpu:a100_3g.39gb
+
+echo "Starting execution of SDM Training ..."
 
 #source /opt/packages/anaconda3/etc/profile.d/conda.sh
 . /etc/profile #to source the module command
@@ -21,4 +27,4 @@ conda activate sdm
 python main.py train -c "configs/config_train.json"
 
 
-echo "Execution of SDM Sampling terminated!"
+echo "Execution of SDM Training terminated!"

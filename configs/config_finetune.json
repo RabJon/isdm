@@ -1,15 +1,15 @@
 {
     "root_log_dir": "OUTPUT/",
     
-    "data_dir": "./data/lemon-dataset-multi-class",
-    "dataset_mode": "lemon-multi-class",
+    "data_dir": "data/lemon-dataset-binary-illness",
+    "dataset_mode": "lemon-binary",
     
     "lr": 1e-4,
-    "batch_size": 4,
+    "batch_size": 12,
     "diffusion_steps": 1000,
     "image_size": 256,
     "learn_sigma": true,
-    "num_classes": 11,
+    "num_classes": 2,
     "noise_schedule": "linear",
     "class_cond": true,
     
@@ -25,5 +25,5 @@
 
 
     "drop_rate": 0.2,
-    "resume_checkpoint" : "OUTPUT/20230727-214914_train_lemon-dataset-multi-class_d=1000_c=11/model035690.pt"
+    "resume_checkpoint" : "OUTPUT/20230906-102628_train_lemon-dataset-binary-illness_d=1000_c=2/model053664.pt"
 }

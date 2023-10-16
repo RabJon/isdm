@@ -4,9 +4,9 @@
 #SBATCH --error=Sample-SDM-%j.err
 #SBATCH --partition=gpu-low
 #SBATCH --account=standard
-#SBATCH --time=4-00:00:00
-#SBATCH --gres=gpu:a100_1g.10gb
-#SBATCH --mem=8G
+#SBATCH --time=3-00:00:00
+#SBATCH --gres=gpu:v100
+#SBATCH --mem=39G
 
 
 #gres=gpu:a100_1g.10gb

@@ -133,6 +133,7 @@ def init_log_dir(action, config):
 
     # command = 'export OPENAI_LOGDIR="{}"'.format(log_dir)
     # make_system_call(command)
+    os.makedirs(log_dir)
 
     return log_dir
 
@@ -173,6 +174,7 @@ def main():
             train_images, val_images, train_masks, val_masks = train_test_split(image_file_paths, mask_file_paths, test_size=0.2, random_state=args.seed)
             train_file_paths = (train_images, train_masks)
             val_file_paths = (val_images, val_masks)
+            print("Splitted dataset into", len(train_images), "training samples and", len(val_images), "validation samples.")
             
         # Add defaults to config
         config = get_training_defaults()
@@ -214,9 +216,19 @@ def main():
     save_config(tmp_config_path, vars(config_args))
 
 
-    #Run the action
+    
     try:
+        
+        #Save the config
+        if not (args.action == "sample"):
+            save_config(os.path.join(log_dir, "input_config.json"), config_in)
+            save_config(os.path.join(log_dir, args.action + "_config.json"), vars(config_args))
+        else:
+            save_config(os.path.join(config_args.results_path, "input_config.json"), config_in)
+            save_config(os.path.join(config_args.results_path, args.action + "_config.json"), vars(config_args))
 
+        
+        #Run the action
         if args.action == "train":
             print("CUDA available 2:", torch.cuda.is_available())#print needed to have CUDA available
             train(config_args)
@@ -231,12 +243,7 @@ def main():
         elif args.action == "test":
             raise NotImplementedError(args.action + " action is not implemented!")
         
-        if not (args.action == "sample"):
-            save_config(os.path.join(log_dir, "input_config.json"), config_in)
-            save_config(os.path.join(log_dir, args.action + "_config.json"), vars(config_args))
-        else:
-            save_config(os.path.join(config_args.results_path, "input_config.json"), config_in)
-            save_config(os.path.join(config_args.results_path, args.action + "_config.json"), vars(config_args))
+        
     except Exception as e:
         raise e
     finally:

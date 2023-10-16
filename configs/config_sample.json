@@ -1,14 +1,14 @@
 {
     "root_log_dir": "OUTPUT/", 
-    "data_dir": "./data/lemon-dataset-multi-class", 
+    "data_dir": "/data/users/jorabensteiner/console-sliced", 
     "dataset_mode": "lemon-multi-class", 
     "lr": 0.0001, 
-    "batch_size": 4, 
-    "diffusion_steps": 500, 
+    "batch_size": 8, 
+    "diffusion_steps": 300, 
     "image_size": 256, 
     "learn_sigma": true, 
-    "num_classes": 11, 
-    "noise_schedule": "cosine", 
+    "num_classes": 6, 
+    "noise_schedule": "linear", 
     "class_cond": true, 
     "num_channels": 256, 
     "num_head_channels": 64, 
@@ -18,8 +18,10 @@
     "use_fp16": true, 
     "use_scale_shift_norm": true, 
     "no_instance": true, 
-    "num_samples": 7, 
-    "model_path": "OUTPUT/20230803-073617_train_lemon-dataset-multi-class_d=1000_c=11/ema_0.9999_116960.pt", 
+    "num_samples": 840, 
+    "model_path": "OUTPUT/20230910-183736_train_console-sliced_d=1000_c=6/ema_0.9999_060204.pt", 
     "s": 1.5, 
     "results_path": "", 
-    "use_ddim": false}
+    "use_ddim": false,
+    "rescale_timesteps": true
+}

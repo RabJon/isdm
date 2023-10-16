@@ -41,8 +41,8 @@ def train(args):
             batch_size=args.batch_size,
             image_size=args.image_size,
             class_cond=args.class_cond,
-            random_crop=False,
-            random_flip=False,
+            random_crop=True,
+            random_flip=True,
             deterministic=False
         )
 
@@ -79,7 +79,7 @@ def train(args):
             schedule_sampler=schedule_sampler,
             weight_decay=args.weight_decay,
             lr_anneal_steps=args.lr_anneal_steps,
-            max_epochs = 2000
+            max_epochs = 20000
         ).run_loop()
     
     
