@@ -44,7 +44,7 @@ class TrainLoop:
         schedule_sampler=None,
         weight_decay=0.0,
         lr_anneal_steps=0,
-        max_epochs = 1000,
+        max_epochs = 20000,
         val_data = None
     ):
         print("Train util LINE 44, CUDA available:", th.cuda.is_available(), "num CUDA devices:", th.cuda.device_count()) #this line makes the difference if CUDA is correctly detected or not
@@ -204,6 +204,7 @@ class TrainLoop:
             writer = SummaryWriter()
             epoch = 0
             min_val_loss = None
+            last_improvement_step = 0
             while (
                 (not self.lr_anneal_steps or self.step + self.resume_step < self.lr_anneal_steps) and (epoch < self.max_epochs)
             ):
@@ -224,26 +225,58 @@ class TrainLoop:
                         
                         self.step += 1
 
+                    #pure validation loop
+                    # for batch, cond in self.val_data:
+                    #     cond = self.preprocess_input(cond)
+                    #     step_loss = self.run_val_step(batch, cond)
+
+                    #     if not epoch_val_loss:
+                    #         epoch_val_loss = step_loss.detach().clone()
+                    #     else:
+                    #         epoch_val_loss += step_loss.detach()
+
+                    #validation set as additional train set
                     for batch, cond in self.val_data:
                         cond = self.preprocess_input(cond)
+                        self.run_step(batch, cond)
+                        if self.step % self.log_interval == 0:
+                            logger.dumpkvs()
+                        
                         step_loss = self.run_val_step(batch, cond)
-
-                        if not epoch_val_loss:
-                            epoch_val_loss = step_loss.detach().clone()
+                        if not epoch_train_loss:
+                            epoch_train_loss = step_loss.detach().clone()
                         else:
-                            epoch_val_loss += step_loss.detach()
+                            epoch_train_loss += step_loss.detach()
+                        
+                        self.step += 1
+
                 
-                epoch_train_loss /= len(self.data)
-                epoch_val_loss /= len(self.val_data)
+                # epoch_train_loss /= len(self.data)
+                # epoch_val_loss /= len(self.val_data)
+                epoch_train_loss /= (len(self.data) + len(self.val_data))
 
                 writer.add_scalar("Loss/train", epoch_train_loss, epoch)
-                writer.add_scalar("Loss/val", epoch_val_loss, epoch)
+                # writer.add_scalar("Loss/val", epoch_val_loss, epoch)
                 
                 
-                if (min_val_loss is None) or (epoch_val_loss < min_val_loss):
-                    print("Epoch:", epoch, "Step:", self.step,"Validation loss improved from", min_val_loss, "to", epoch_val_loss, "Saving new checkpoints!")
-                    min_val_loss = epoch_val_loss
+                # if (min_val_loss is None) or (epoch_val_loss < min_val_loss):
+                #     print("Epoch:", epoch, "Step:", self.step,"Validation loss improved from", min_val_loss, "to", epoch_val_loss, "Saving new checkpoints!")
+                #     min_val_loss = epoch_val_loss
+                #     last_improvement_step = self.step
+                #     self.save(delete_last_saved=True)
+                
+                #version that uses just the train loss
+                if (min_val_loss is None) or (epoch_train_loss < min_val_loss):
+                    print("Epoch:", epoch, "Step:", self.step,"Train loss improved from", min_val_loss, "to", epoch_train_loss, "Saving new checkpoints!")
+                    min_val_loss = epoch_train_loss
+                    last_improvement_step = self.step
                     self.save(delete_last_saved=True)
+
+
+                if (self.step - last_improvement_step) > 100000:
+                    print("Model did not improve for 100000 steps. Aborting training!")
+                    break
+
                 epoch += 1
                 
 
@@ -307,7 +340,7 @@ class TrainLoop:
                 else:
                     step_loss = loss.clone()
             
-            return step_loss / batch.shape[0]
+            return step_loss
 
 
 
