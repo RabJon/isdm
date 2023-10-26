@@ -65,9 +65,15 @@ def get_dataset_file_paths(train_root_path, test_root_path = None):
         masks_names_list = os.listdir(masks_subfolder)
         masks_names_list.sort()
 
+        if "Thumbs.db" in image_names_list:
+            image_names_list.remove("Thumbs.db")
+        
+        if "Thumbs.db" in masks_names_list:
+            masks_names_list.remove("Thumbs.db")
+
         for mask_name in masks_names_list:
-            if not mask_name.endswith(".png"):
-                raise ValueError("Masks are required to have PNG format!")
+            if  not mask_name.endswith(".png"):
+                raise ValueError("Masks are required to have PNG format! Got file name " + mask_name)
             
         image_names_list_no_ext = [im.split(".")[0] for im in image_names_list]
         mask_names_list_no_ext = [m.split(".")[0] for m in masks_names_list]
