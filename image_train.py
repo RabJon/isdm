@@ -32,9 +32,11 @@ def train(args):
     )
     model.to(dist_util.dev())
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion)
+    torch.cuda.empty_cache() 
 
     if args.train_file_paths and args.val_file_paths:
-        logger.log("creating data loader...")
+        logger.log("creating data loader with train and validation files...")
+        logger.log("batch_size:" + str(args.batch_size))
         train_data = load_data_from_file_paths(
             dataset_mode=args.dataset_mode,
             file_paths=args.train_file_paths,
@@ -59,7 +61,7 @@ def train(args):
 
         print("CUDA available 2:", torch.cuda.is_available(), "device_count:", torch.cuda.device_count())
         logger.log("training...")
-        
+        torch.cuda.empty_cache() 
         TrainLoop(
             model=model,
             diffusion=diffusion,
@@ -84,7 +86,8 @@ def train(args):
     
     
     elif args.data_dir: #legacy mode without epochs and without validation set
-        logger.log("creating data loader...")
+        logger.log("creating data loader from data_dir...")
+        logger.log("batch_size:" + str(args.batch_size))
         data = load_data(
             dataset_mode=args.dataset_mode,
             data_dir=args.data_dir,
