@@ -99,7 +99,7 @@ def balance(
     
     Y = np.zeros((num_real_masks, height, width), dtype=np.uint8)
     for i in range(num_real_masks):
-        mask = Image.open(mask_file_paths[i]).convert('L').resize(width, height, resample=Image.NEAREST)
+        mask = Image.open(mask_file_paths[i]).convert('L').resize((width, height), resample=Image.NEAREST)
         if num_classes == 2:
             mask[mask == 255] = 1
         Y[i] = np.array(mask)
