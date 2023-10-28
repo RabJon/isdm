@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:1024"
 from shutil import copyfile, rmtree, move
 import filecmp
 from sklearn.model_selection import train_test_split
@@ -10,6 +11,7 @@ import numpy as np
 from guided_diffusion.script_util import model_and_diffusion_defaults
 
 import torch
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:1024"
 
 from image_train import train, get_training_defaults
 from image_sample import sample, get_sampling_defaults
@@ -199,10 +201,10 @@ def main():
         #Manipulate config to have better control over sampling procedure
         if "balance_args" in config: #balancing is used
             image_file_paths, mask_file_paths = get_dataset_file_paths(os.path.join(config_in["data_dir"], "train"))
-            balanced_indices = balance(mask_file_paths, config["num_samples"], **config["balance_args"])
+            balanced_indices = balance(mask_file_paths, config["num_samples"], config["num_classes"], height=config["image_size"], width=config["image_size"], **config["balance_args"])
             image_file_paths = np.array(image_file_paths)[balanced_indices]
             mask_file_paths = np.array(mask_file_paths)[balanced_indices]
-            config["file_paths"] = (image_file_paths, mask_file_paths)
+            config["file_paths"] = (image_file_paths.tolist(), mask_file_paths.tolist())
         else:
             config["file_paths"] = None 
 
@@ -236,6 +238,7 @@ def main():
         
         #Run the action
         if args.action == "train":
+            torch.cuda.empty_cache() 
             print("CUDA available 2:", torch.cuda.is_available())#print needed to have CUDA available
             train(config_args)
             
