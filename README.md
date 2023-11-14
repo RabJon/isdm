@@ -72,6 +72,7 @@ GPU: NVIDIA GeForce RTX 3090 24 GB -->
 ### Required Data Format
 The SDMs need to be trained on real semantic segmentation datasets. So, it is required to have images and corresponding pixel-level labels (semantic masks). Such datasets come in different formats and the original code would also support for some of these, but for my master thesis I used a very simple format of saving both images and semantic masks as picture files. Images can be in PNG and JPG format and masks are required to be PNGs. They need to be saved in separate folders named "images" and "masks" and corresponding files need to share a filename. Furthermore, it is required to provide train and test datasets. The test dataset is only used during evaluation to check if the synthetic data actually helps to improve semantic segmentation models. Therefore, the final required folder structure should look like the following:
 
+```
 ├── dataset_name
 │   ├── test
 │   │   ├── images
@@ -85,48 +86,57 @@ The SDMs need to be trained on real semantic segmentation datasets. So, it is re
 │   │   │   ├── **/*.png
 │   │   ├── masks
 │   │   │   ├── **/*.png
+```
 
 If you follow this structure then you can just set the configuration parameters `data_dir` to <dataset_name> and `dataset_mode` to "lemon-binary" or "lemon-multi-class" depending on if your dataset is a binary or multi-class segmentation dataset.
 
 ### Actions and Config Files
 ISDM supports to perform three different actions ("train", "finetune" and "sample") all of which require slightly different configuration files.
 
-1. Train: This action trains a SDM on the specified dataset. It is launched using the command:
-> python main.py train -c configs/config_train.json
+1. Train: This action trains a SDM on the specified dataset. One will need to change the default [train configuration](./configs/config_train.json) according to his dataset. The parameters that (may) need to be changed are:
 
-One will need to change the default [train configuration](./configs/config_train.json) according to his dataset. The parameters that (may) need to be changed are:
-* data_dir: As explained above in section "Required Data Format"
-* dataset_mode: As explained above in section "Required Data Format"
-* batch_size: use smaller values to prevent OOM exceptions
-* num_channels: use smaller values to prevent OOM exceptions
-* image_size: adjust for your usecase
-* num_classes: set it to 2 if dataset_mode is "lemon-binary"
-* resume_checkpoint: this is only used to resume a previous model training, don't specify this parameter for fresh training processes
+    * data_dir: As explained above in section "Required Data Format"
+    * dataset_mode: As explained above in section "Required Data Format"
+    * batch_size: use smaller values to prevent OOM exceptions
+    * num_channels: use smaller values to prevent OOM exceptions
+    * image_size: adjust for your usecase
+    * num_classes: set it to 2 if dataset_mode is "lemon-binary"
+    * resume_checkpoint: this is only used to resume a previous model training, don't specify this parameter for fresh training processes
+
+    The command to launch the train action is:
+    > python main.py train -c configs/config_train.json
 
 2. Finetune: Finetuning an SDM consists of randomly replacing the real semantic mask with the so-called null/empty label (semantic mask consisting only of 0 values). There are two additional parameters in the default [finetune configuration](./configs/config_finetune.json) compared to the default train configuration:
-* drop_rate: probability to "drop" the real semantic mask
-* resume_checkpoint: path to the model that should be finetuned (use the .pt file called "model" and not "ema")
 
+    * drop_rate: probability to "drop" the real semantic mask
+    * resume_checkpoint: path to the model that should be finetuned (use the .pt file called "model" and not "ema")
 
+    The command to launch the finetune action is:
+    > python main.py train -c configs/config_finetune.json
 
 3. Sample: Sampling is the process of generating synthetic datasets with SDMs. During sampling semantic masks from the real train set are used to condition the synthesis of corresponding images. As for the "train" and "finetune" actions, to "sample" one will need to change the default [sample configuration](./configs/config_sample.json) according to his needs. The parameters that are of particular importance for sampling are:
-* diffusion_steps and rescale_timesteps: for the original SDM implementation the diffusion steps for sampling would correspond to the ones used during the traininig process (usually 1000), but if "rescale_timesteps" is true, I found that using as few as 300 diffusion steps is sufficient.
-* num_samples: number of images to generate
-* model_path: SDM to use for sampling (use the .pt file called "ema" and not "model")
-* s: Guidance scale that controls the influence of the semantic mask for conditioning the diffusion process. (s=1.5 showed to work fine for the datasets I tested)
-* balance_args: This optional parameter is itself a dictionary containing different parameters. If it is specified, it is tried to sample in a way such that the class pixel count is balanced accross the generated (and real) images. The (sub-)parameters that can be set within this dictionary are:
-  * max_class_dif: maximum relative difference between the classes. Default 0.1.
-  * based_on_generated_data_only: If balancing should consider only the generated data, or the existing real data too. Default false. Other values than default are not implemented yet.
-  * based_on_pixel_count: Default true. Other values than default are not implemented yet.
-  * ejection_classes: Default [0]. Other values than default are not implemented yet.
-  * use_mask_augmentation: Default false. Other values than default are not implemented yet.
 
+    * diffusion_steps and rescale_timesteps: for the original SDM implementation the diffusion steps for sampling would correspond to the ones used during the traininig process (usually 1000), but if "rescale_timesteps" is true, I found that using as few as 300 diffusion steps is sufficient.
+    * num_samples: number of images to generate
+    * model_path: SDM to use for sampling (use the .pt file called "ema" and not "model")
+    * s: Guidance scale that controls the influence of the semantic mask for conditioning the diffusion process. (s=1.5 showed to work fine for the datasets I tested)
+    * balance_args: This optional parameter is itself a dictionary containing different parameters. If it is specified, it is tried to sample in a way such that the class pixel count is balanced accross the generated (and real) images. The (sub-)parameters that can be set within this dictionary are:
+        * max_class_dif: maximum relative difference between the classes. Default 0.1.
+        * based_on_generated_data_only: If balancing should consider only the generated data, or the existing real data too. Default false. Other values than default are not implemented yet.
+        * based_on_pixel_count: Default true. Other values than default are not implemented yet.
+        * ejection_classes: Default [0]. Other values than default are not implemented yet.
+        * use_mask_augmentation: Default false. Other values than default are not implemented yet.
 
-The outputs of the sampling process are saved as subfolders of the [Results](./RESULTS/) folder. Each output folder itself contains four subfolders:
-* labels: contains the real semantic masks that are used for conditioning the sampling process. These garyscale picture files might appear completely black, because class values start from 0 (black) onwards and therefore low class values are not easy to distinguish from pure black.
-* images: contains the real images the correspond to the labels
-* colored_labels: contains the same information as labels, but color-coded such that the different classes are easier to recognise.
-* samples: The images generated by the SDM and corresponding to the label files with the same name.
+    The command to launch the sample action is:
+    > python main.py sample -c configs/config_sample.json
+
+    The outputs of the sampling process are saved as subfolders of the [Results](./RESULTS/) folder. Each output folder itself contains four subfolders:
+    * labels: contains the real semantic masks that are used for conditioning the sampling process. These garyscale picture files might appear completely black, because class values start from 0 (black) onwards and therefore low class values are not easy to distinguish from pure black.
+    * images: contains the real images the correspond to the labels
+    * colored_labels: contains the same information as labels, but color-coded such that the different classes are easier to recognise.
+    * samples: The images generated by the SDM and corresponding to the label files with the same name.
+
+> **_NOTE:_**  The default configurations are VRAM-intensive (12 GB of VRAM proved to be not enough). Therefore, "CUDA out of memory exceptions" may occur. Some possibilities to solve this are to reduce the batch size as well as (if possible) the "image_size" and "num_channels" parameters.
 
 
 ## Showcase
@@ -142,9 +152,19 @@ Semantic Mask             |  Corresponding Sample
 
 
 
-## License
-TODO
+<!-- ## License
+TODO -->
 
 
 ## Citation
-If you use this project for your work, please cite ... TODO
+If you use this project for your work, please cite:
+```
+@masterthesis{jonasrabensteinerthesis,
+    title        = {Improving Semantic Segmentation Models through Synthetic Data Generation via Diffusion Models},
+    author       = {Jonas Rabensteiner},
+    year         = 2023,
+    month        = {September},
+    school       = {Free University of Bozen-Bolzano},
+    type         = {Master's thesis}
+}
+```
