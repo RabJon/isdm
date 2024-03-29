@@ -218,7 +218,7 @@ def main():
     print("Logging into:", log_dir)
 
     print("Running config for", args.action)
-    print(config)
+    #print(config)
     config_args = argparse.Namespace(**config)
     tmp_config_path = os.path.join(os.path.dirname(__file__), args.action + "_" + str(get_num_running_configs()) + "_config_running.json")
     save_config(tmp_config_path, vars(config_args))
