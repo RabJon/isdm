@@ -1,0 +1,12 @@
+{
+    "train": "PATH_TO_YOUR_TRAIN_DATA",
+    "test": "PATH_TO_YOUR_TEST_DATA",
+    "log": "./logs",
+    "image_size": 128,
+    "generated_masks": "",
+    "generated_images": "",
+    "semantic_image_synthesis": false,
+    "num_classes": 2,
+    "test_codes": null,
+    "models": null
+}

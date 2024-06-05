@@ -1,0 +1,485 @@
+#=========================================================
+# Developer: Vajira Thambawita (PhD)
+# References: * https://github.com/qubvel/segmentation_models.pytorch/blob/master/examples/binary_segmentation_intro.ipynb
+#             * https://pytorch-lightning.readthedocs.io/en/stable/
+#=========================================================
+
+import argparse
+import json
+from omegaconf import OmegaConf
+from datetime import datetime
+import os
+import copy
+from tqdm import tqdm
+import matplotlib.pyplot as plt
+import numpy as np
+from PIL import Image
+
+#Pytorch
+import torch
+import torch.optim as optim
+from torch.optim import lr_scheduler
+import torch.nn as nn
+from torch.utils.data import DataLoader
+from torchvision import models, transforms,datasets, utils
+
+from torch.autograd import Variable
+
+
+import segmentation_models_pytorch as smp
+import pytorch_lightning as pl
+from pytorch_lightning.cli import LightningCLI
+#from einops import rearrange
+import pandas as pd
+
+from data.prepare_data import PolypDataModule # custom data module
+import segmentation_models_pytorch as smp
+import wandb
+from pytorch_lightning.loggers import WandbLogger
+
+
+
+
+# Pytorch lightning training
+class PolypModel(pl.LightningModule):
+
+    def __init__(self, 
+                 arch="UnetPlusPlus", 
+                 encoder_name= "resnet34", 
+                 in_channels=3, 
+                 out_classes=1, 
+                 lr=0.0001, 
+                 test_print_batch_id=0, 
+                 test_print_num=5, 
+                 output_dir="",
+                 wandb_name="",
+                 **kwargs):
+        super().__init__()
+        
+        
+        
+        # "UnetPlusPlus", "resnet34", in_channels=3, out_classes=2
+        self.arch = arch
+        self.encoder_name = encoder_name
+        self.in_channels = in_channels
+        self.out_classes = out_classes
+        self.test_print_batch_id = test_print_batch_id
+        self.test_print_num = test_print_num
+        self.lr = lr
+        self.wandb_name = "test"
+        self.output_dir = output_dir
+        self.wandb_name = wandb_name
+        
+        
+        print("Model architecture:", self.arch)
+        print(self.output_dir)
+        
+        #exit(0)
+        #os.makedirs(self.output_dir, exist_ok=True)
+
+        self.model = smp.create_model(
+            self.arch, encoder_name=self.encoder_name, in_channels=self.in_channels, classes=self.out_classes, **kwargs)
+
+        # preprocessing parameteres for image
+        params = smp.encoders.get_preprocessing_params(encoder_name)
+        self.register_buffer("std", torch.tensor(params["std"]).view(1, 3, 1, 1)) # self.std
+        self.register_buffer("mean", torch.tensor(params["mean"]).view(1, 3, 1, 1)) # self.mean
+
+        if self.out_classes == 1:
+            # for image segmentation dice loss could be the best first choice
+            self.loss_fn = smp.losses.DiceLoss(smp.losses.BINARY_MODE, from_logits=True, ignore_index=255)
+        else:
+            print("Using multi-class mode!")
+            self.loss_fn = smp.losses.DiceLoss(smp.losses.MULTICLASS_MODE, from_logits=True, ignore_index=255)
+
+
+    def forward(self, image):
+        # normalize image here
+        image = (image - self.mean) / self.std
+        mask = self.model(image)
+        return mask
+
+    def shared_step(self, batch, stage):
+        
+        image = batch["image"]
+
+        # Shape of the image should be (batch_size, num_channels, height, width)
+        # if you work with grayscale images, expand channels dim to have [batch_size, 1, height, width]
+        assert image.ndim == 4
+
+        # Check that image dimensions are divisible by 32, 
+        # encoder and decoder connected by `skip connections` and usually encoder have 5 stages of 
+        # downsampling by factor 2 (2 ^ 5 = 32); e.g. if we have image with shape 65x65 we will have 
+        # following shapes of features in encoder and decoder: 84, 42, 21, 10, 5 -> 5, 10, 20, 40, 80
+        # and we will get an error trying to concat these features
+        h, w = image.shape[2:]
+        #print(f"h={h}, w={w}")
+        assert h % 32 == 0 and w % 32 == 0
+
+        mask = batch["mask"]
+
+        # Shape of the mask should be [batch_size, num_classes, height, width]
+        # for binary segmentation num_classes = 1
+        assert mask.ndim == 4
+
+        
+        if self.out_classes == 1:
+            # Check that mask values in between 0 and 1, NOT 0 and 255 for binary segmentation
+            assert mask.max() <= 1.0 and mask.min() >= 0
+        else:
+            assert torch.all(torch.isin(torch.unique(mask), torch.arange(self.out_classes, device=mask.device))), "Mask values out of range: " + str(np.unique(mask))
+
+        logits_mask = self.forward(image)
+        
+        # Predicted mask contains logits, and loss_fn param `from_logits` is set to True
+        loss = self.loss_fn(logits_mask, mask.long())
+
+        # Lets compute metrics for some threshold
+        # first convert mask values to probabilities, then 
+        # apply thresholding
+        
+        if self.out_classes == 1:
+            prob_mask = logits_mask.sigmoid()
+            pred_mask = (prob_mask > 0.5).float()
+        else:
+            pred_mask = torch.argmax(logits_mask, dim=1)
+
+        
+        # We will compute IoU metric by two ways
+        #   1. dataset-wise
+        #   2. image-wise
+        # but for now we just compute true positive, false positive, false negative and
+        # true negative 'pixels' for each image and class
+        # these values will be aggregated in the end of an epoch
+        if self.out_classes == 1:
+            tp, fp, fn, tn = smp.metrics.get_stats(pred_mask.long(), mask.long(), mode="binary")
+        else:
+            tp, fp, fn, tn = smp.metrics.get_stats(pred_mask.long(), torch.squeeze(mask.long()), mode="multiclass", num_classes=self.out_classes)
+
+        return {
+            "loss": loss,
+            "tp": tp,
+            "fp": fp,
+            "fn": fn,
+            "tn": tn,
+        }
+
+    def shared_epoch_end(self, outputs, stage):
+        # aggregate step metics
+        tp = torch.cat([x["tp"] for x in outputs])
+        fp = torch.cat([x["fp"] for x in outputs])
+        fn = torch.cat([x["fn"] for x in outputs])
+        tn = torch.cat([x["tn"] for x in outputs])
+
+        # per image IoU means that we first calculate IoU score for each image 
+        # and then compute mean over these scores
+        per_image_iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro-imagewise")
+        
+        # dataset IoU means that we aggregate intersection and union over whole dataset
+        # and then compute IoU score. The difference between dataset_iou and per_image_iou scores
+        # in this particular case will not be much, however for dataset 
+        # with "empty" images (images without target class) a large gap could be observed. 
+        # Empty images influence a lot on per_image_iou and much less on dataset_iou.
+        dataset_iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
+
+        metrics = {
+            f"{stage}_per_image_iou": per_image_iou,
+            f"{stage}_dataset_iou": dataset_iou,
+        }
+        
+        #if stage == "valid":
+        #    print(metrics)
+        
+        self.log_dict(metrics, prog_bar=True)
+
+    def training_step(self, batch, batch_idx):
+        return self.shared_step(batch, "train")            
+
+    def training_epoch_end(self, outputs):
+        return self.shared_epoch_end(outputs, "train")
+
+    def validation_step(self, batch, batch_idx):
+        return self.shared_step(batch, "valid")
+
+    def validation_epoch_end(self, outputs):
+        return self.shared_epoch_end(outputs, "valid")
+
+    def test_step(self, batch, batch_idx):
+        image = batch["image"]
+        #print(image.shape)
+        image_before = image
+        #print(image_before.shape)
+        image_origin = batch["image_origin"]
+        mask = batch["mask"]
+
+        #My change
+        img_path = batch["image_path"]
+        mask_path = batch["mask_path"]
+        
+        
+        if self.out_classes == 1:
+        #My checks on mask: because somehting is not adding up, GT masks are always only zero
+            assert mask.max() <= 1.0 and mask.min() >= 0
+        else:
+            assert torch.all(torch.isin(torch.unique(mask), torch.arange(self.out_classes, device=mask.device))), "Mask values out of range: " + str(np.unique(mask))
+        
+        #assert torch.equal(torch.unique(mask), torch.tensor([0,1]).to("cuda:0")), "mask only contains value(s): " + str(torch.unique(mask))
+
+        
+        image = (image - self.mean) / self.std
+        mask_p = self.model(image)
+        
+        if self.out_classes == 1:
+            prob_mask = mask_p.sigmoid()
+            pred_mask = (prob_mask > 0.5).float()
+        else:
+            prob_mask = nn.functional.softmax(mask_p, dim=1)
+            pred_mask = torch.argmax(mask_p, dim=1)
+        
+        
+        loss = self.loss_fn(mask_p, mask.long())
+        #print(mask_p.shape)
+
+        print("pred mask shape:", pred_mask.long().shape)
+        print("mask shape before squeeze:", mask.long().shape, "and after:", torch.squeeze(mask.long()).shape)
+
+        if self.out_classes == 1:
+            tp, fp, fn, tn = smp.metrics.get_stats(pred_mask.long(), mask.long(), mode="binary")
+        else:
+            tp, fp, fn, tn = smp.metrics.get_stats(pred_mask.long(), torch.squeeze(mask.long(), dim=1), mode="multiclass", num_classes=self.out_classes)
+        
+        # return {"image_origin": image_origin, 
+        #         "image_before":image_before,
+        #         "mask": mask, 
+        #         "prob_mask": prob_mask, 
+        #         "pred_mask": pred_mask,
+        #         "loss": loss,
+        #         "tp": tp,
+        #         "fp": fp,
+        #         "fn": fn,
+        #         "tn": tn,}
+        
+        #my change
+        return {"image_origin": image_origin, 
+                "image_before":image_before,
+                "mask": mask, 
+                "prob_mask": prob_mask, 
+                "pred_mask": pred_mask,
+                "loss": loss,
+                "tp": tp,
+                "fp": fp,
+                "fn": fn,
+                "tn": tn,
+                "image_path": img_path,
+                "mask_path": mask_path}  
+
+    def test_epoch_end(self, outputs):
+        
+        # aggregate step metics
+        tp = torch.cat([x["tp"] for x in outputs])
+        fp = torch.cat([x["fp"] for x in outputs])
+        fn = torch.cat([x["fn"] for x in outputs])
+        tn = torch.cat([x["tn"] for x in outputs])
+       
+        
+        per_image_iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro-imagewise")
+        dataset_iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
+        
+        per_image_f1 = smp.metrics.f1_score(tp, fp, fn, tn, reduction="micro-imagewise")
+        dataset_f1 = smp.metrics.f1_score(tp, fp, fn, tn, reduction="micro")
+        
+        per_image_accuray = smp.metrics.accuracy(tp, fp, fn, tn, reduction="micro-imagewise")
+        dataset_accuracy = smp.metrics.accuracy(tp, fp, fn, tn, reduction="micro")
+        
+        per_image_precision = smp.metrics.precision(tp, fp, fn, tn, reduction="micro-imagewise")
+        dataset_precision = smp.metrics.precision(tp, fp, fn, tn, reduction="micro")
+        
+        
+        if self.out_classes == 1:
+            metrics = {
+                "per_image_iou": per_image_iou,
+                "per_image_f1": per_image_f1,
+                "per_image_accuray": per_image_accuray,
+                "per_image_precision": per_image_precision,
+                "dataset_iou": dataset_iou,
+                "dataset_f1": dataset_f1,
+                "dataset_accuracy": dataset_accuracy,
+                "dataset_precision": dataset_precision 
+            }
+        else:
+            
+            per_image_per_class_iou = torch.mean(smp.metrics.iou_score(tp, fp, fn, tn, reduction=None), dim=0)#one value for each class (averaged over images)
+            per_image_per_class_f1 = torch.mean(smp.metrics.f1_score(tp, fp, fn, tn, reduction=None), dim=0)
+            per_image_per_class_accuray = torch.mean(smp.metrics.accuracy(tp, fp, fn, tn, reduction=None), dim=0)
+            per_image_per_class_precision = torch.mean(smp.metrics.precision(tp, fp, fn, tn, reduction=None), dim=0)
+            
+            metrics = {
+                "per_image_iou": float(per_image_iou),
+                "per_image_f1": float(per_image_f1),
+                "per_image_accuray": float(per_image_accuray),
+                "per_image_precision": float(per_image_precision),
+                "dataset_iou": float(dataset_iou),
+                "dataset_f1": float(dataset_f1),
+                "dataset_accuracy": float(dataset_accuracy),
+                "dataset_precision": float(dataset_precision) 
+            }
+            
+            for c in range(self.out_classes):
+                metrics[f"per_image_iou_class_{c}"] = float(per_image_per_class_iou[c])
+                metrics[f"per_image_f1_class_{c}"] = float(per_image_per_class_f1[c])
+                metrics[f"per_image_accuray_class_{c}"] = float(per_image_per_class_accuray[c])
+                metrics[f"per_image_precision_class_{c}"] = float(per_image_per_class_precision[c])
+            
+            metrics["per_image_iou_macro"] = float(torch.mean(per_image_per_class_iou))
+            metrics["per_image_f1_macro"] = float(torch.mean(per_image_per_class_f1))
+            metrics["per_image_accuracy_macro"] = float(torch.mean(per_image_per_class_accuray))
+            metrics["per_image_precision_macro"] = float(torch.mean(per_image_per_class_precision))
+
+            
+        self.log_dict(metrics, prog_bar=True)
+        
+        
+        
+        if self.test_print_num:#TODO: implement in a cleaner way if not totally refactored
+            
+            
+            json_string = json.dumps(metrics)
+            with open(f"{self.output_dir}/metrics.json", 'w') as outfile:
+                outfile.write(json_string)
+            
+            
+            with open(f"{self.output_dir}/metrics.txt", "w") as f:
+            
+                for key, value in metrics.items():
+                    f.write(f"{key}\t={value}")
+                    f.write("\n")
+
+            #print("test config=", self.ckpt_path)
+            max_num_test_prints = min(self.test_print_num, len(outputs[0]["image_origin"])) #avoids Out of Bounds
+            for i in range(max_num_test_prints):
+                img = outputs[0]["image_origin"][i].cpu().numpy()
+                #img_before = rearrange(outputs[0]["image_before"][i], 'c h w -> h w c').cpu().numpy()
+                #print("img before max=", img_before.max())
+                #print("img before min=", img_before.min())
+                if self.out_classes == 1:
+                    mask = outputs[0]["pred_mask"][i][0,:, :].cpu().numpy()
+                else:
+                    mask = outputs[0]["pred_mask"][i].cpu().numpy()
+                print("predicted mask:", "shape:", mask.shape, "dtype:", mask.dtype , "unique values:", np.unique(mask))
+                mask_gt = outputs[0]["mask"][i][0,:, :].cpu().numpy()
+                print("GT mask:", "shape:", mask_gt.shape, "dtype:", mask_gt.dtype , "unique values:", np.unique(mask_gt))
+                plt.imsave(f"{self.output_dir}/image_{i}.png",img) 
+                plt.imsave(f"{self.output_dir}/mask_pred_{i}.png", mask) 
+                plt.imsave(f"{self.output_dir}/mask_gt_{i}.png", mask_gt) 
+                #plt.imsave(f"{self.output_dir}/image_before_{i}.png", img_before) 
+        else:
+            #compute iou per iamge
+            # all_ious = smp.metrics.iou_score(tp, fp, fn, tn, reduction=None)
+            # all_ious_np = all_ious.cpu().numpy()
+            # np.save(os.path.join(self.output_dir, "all_ious.npy"), all_ious_np)
+
+            #compute CE loss per image
+            ce_loss_fn = smp.losses.SoftCrossEntropyLoss(reduction=None, smooth_factor=0.0) #per image CE loss
+            masks = torch.cat([x["mask"] for x in outputs])
+            prob_masks = torch.cat([x["prob_mask"] for x in outputs])
+            if prob_masks.size(1) == 1: #binary case
+                #in the binary case we need to expand the tensor to 2 values (1-p,p) in dim 1
+                prob_masks_expaned = prob_masks.expand(-1, 2, -1, -1).clone()
+                prob_masks_expaned[:,0,:,:] = 1 -  torch.squeeze(prob_masks)
+                prob_masks_expaned[:,1,:,:] = torch.squeeze(prob_masks)
+                prob_masks = prob_masks_expaned
+            # print("GT masks:", "shape:", masks.shape, "dtype:", masks.dtype, "values:", torch.unique(masks))
+            # print("Prob masks:", "shape:", prob_masks.shape, "dtype:", prob_masks.dtype, "values:", torch.unique(prob_masks))
+
+            
+
+            all_ce_losses = ce_loss_fn(prob_masks, torch.squeeze(masks).long())
+            all_ce_losses = torch.mean(torch.squeeze(all_ce_losses), dim=(1,2), dtype=torch.float16) #one value for each image
+            all_ce_losses_np = all_ce_losses.cpu().numpy().astype(np.float16)
+            np.save(os.path.join(self.output_dir, "all_ce_losses.npy"), all_ce_losses_np)
+
+
+            flatten = lambda l: [item for sublist in l for item in sublist]
+            all_image_paths_np = np.array(flatten([x["image_path"] for x in outputs]))
+            all_mask_paths_np = np.array(flatten([x["mask_path"] for x in outputs]))
+
+            # all_image_paths_np = all_image_paths.cpu().numpy()
+            # all_mask_paths_np = all_mask_paths.cpu().numpy()
+            np.savetxt(os.path.join(self.output_dir, "all_image_paths.txt"), all_image_paths_np, fmt="%s")
+            np.savetxt(os.path.join(self.output_dir, "all_mask_paths.txt"), all_mask_paths_np, fmt="%s")
+            
+        
+    
+    def predict_step(self, batch, batch_idx):
+        image = batch["image"]
+        
+        # mask = batch["mask"] original code: mask is uint8
+        #Note that the following change is a hack that will only work for binary outputs.
+        #this way pyplot plots it as float where 1.0 is yellow and 0.0 violett
+        mask = batch["mask"].float()  
+        
+        image = (image - self.mean) / self.std
+        mask_p = self.model(image)
+        if self.out_classes == 1:
+            prob_mask = mask_p.sigmoid()
+            pred_mask = (prob_mask > 0.5).float()
+        else:
+            prob_mask = nn.functional.softmax(mask_p, dim=1)
+            pred_mask = torch.argmax(mask_p, dim=1)
+            
+        
+        print(mask_p.shape)
+        
+        return {"image": image, "mask": mask, "prob_mask": prob_mask, "pred_mask": pred_mask}
+    
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=self.lr)
+
+
+
+    
+class MyLightningCLI(LightningCLI):
+    def add_arguments_to_parser(self, parser):
+        parser.add_argument("--wandb_name", default="unet_plus_plus_1")
+        parser.add_argument("--wandb_entity", default="simulamet_mlc")
+        parser.add_argument("--wandb_project", default="diffusion_polyp")
+        parser.add_argument("--output_dir", default="output/new_3")
+        parser.link_arguments("output_dir", "model.output_dir")
+        parser.link_arguments("wandb_name", "model.wandb_name")
+        
+    #def add_default_arguments_to_parser(self, parser):
+        
+        
+        
+    def instantiate_classes(self):
+        #print(self.config[self.config.subcommand])
+        
+        # Call to the logger before initiate other clases, because Trainer class init logger if we didn´t do it
+        logger = WandbLogger(entity=self.config[self.config.subcommand].wandb_entity, 
+                             project=self.config[self.config.subcommand].wandb_project,
+                             name=self.config[self.config.subcommand].wandb_name,
+                             offline=True)
+        
+        super().instantiate_classes() # call to super class instatiate_classes()
+      
+        
+
+# Implementing a CLI
+def cli_main():
+  
+    full_configs = [p for p in os.listdir("./") if p.endswith("full_config.yaml")]
+    this_full_config_name = str(len(full_configs)) + "_" + "full_config.yaml"
+    cli = MyLightningCLI(PolypModel, PolypDataModule, 
+                       save_config_kwargs={"config_filename": this_full_config_name, 'overwrite':True}
+                       )
+    
+
+
+if __name__ == "__main__":
+
+    cli_main() # Pytorch lightning command line interface 
+    wandb.finish() # Finish Wandb
+
+   
+

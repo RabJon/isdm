@@ -1,0 +1,1 @@
+Code relies strongly on: https://github.com/simulamet-host/conditional-polyp-diffusion/tree/main/segmentation_experiments
