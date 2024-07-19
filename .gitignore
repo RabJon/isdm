@@ -50,4 +50,4 @@ generated_data/
 *.err
 tmp_pytorch_cuda_test.py
 runs/
-*config_running.json
+*_config*.json
