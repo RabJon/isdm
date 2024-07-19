@@ -5,14 +5,14 @@ import shutil
 import argparse
 
 
-def check_image(image_path, brightness_threshold = 240, undersaturation_threshold = 50):
+def check_sample(sample_path, brightness_threshold = 240, undersaturation_threshold = 15):
 
     status = "ok"
 
     ################################################################
     # Check overexposition
     ################################################################
-    image = cv2.imread(image_path)
+    image = cv2.imread(sample_path)
 
     # Convert the image to grayscale
     gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -25,8 +25,7 @@ def check_image(image_path, brightness_threshold = 240, undersaturation_threshol
     saturation_ratio = num_saturated_pixels / total_pixels
 
     # If the ratio is above a certain threshold, consider the image overexposed
-    overexposed_threshold = 0.05  # You can adjust this threshold as needed
-
+    overexposed_threshold = 0.55
     is_overexposed = saturation_ratio > overexposed_threshold
 
     if is_overexposed:
@@ -126,16 +125,36 @@ def main():
     args = parser.parse_args()
 
     folder_path = args.source
-    folder_path = "RESULTS/20240315-194356_sample_2024-03-06_All_Samples_as_PNGs_d=300_c=15_samples=10000_model=ema_0.9999_053460.pt_s=1.5/samples"
-    image_paths = [p for p in os.listdir(folder_path) if p.endswith(".png")]
-    image_states = [check_image(os.path.join(folder_path, path)) for path in image_paths]
-    print(np.unique(image_states, return_counts=True))
+    # folder_path = "RESULTS/20240315-194356_sample_2024-03-06_All_Samples_as_PNGs_d=300_c=15_samples=10000_model=ema_0.9999_053460.pt_s=1.5"
+    filenames = [p for p in os.listdir(os.path.join(folder_path, "samples")) if p.endswith(".png")]
+    src_sample_paths = [os.path.join(folder_path, "samples", fn) for fn in filenames]
+    sample_states = [check_sample(path) for path in src_sample_paths]
+    states, counts = np.unique(sample_states, return_counts=True)
+    states_counts = {s:c for s, c in zip(states, counts)}
+    print(states_counts)
 
-    # for path, state in zip(image_paths, image_states):
-    # full_path = os.path.join(folder_path, path)
-    # if not os.path.isdir(os.path.join(folder_path, os.pardir, state, os.path.basename(folder_path))):
-    #     os.makedirs(os.path.join(folder_path, os.pardir, state, os.path.basename(folder_path)))
-    # shutil.copyfile(full_path, os.path.join(folder_path, os.pardir, state, os.path.basename(folder_path), path))
+    for filename, src_sample_path, state in zip(filenames, src_sample_paths, sample_states):
+        if state == "ok":
+            dst_sample_dir_path = os.path.join(folder_path, state, "samples")
+            if not os.path.isdir(dst_sample_dir_path):
+                os.makedirs(dst_sample_dir_path)
+            dst_sample_path = os.path.join(dst_sample_dir_path, filename)
+            shutil.copyfile(src_sample_path, dst_sample_path)
+            # print("Copying", src_sample_path, "to", dst_sample_path)
+            
+
+            splitted_src_label_path = src_sample_path.split(os.sep)
+            splitted_src_label_path[-2] = "labels"
+            src_label_path = os.path.join(*splitted_src_label_path)
+
+            dst_label_dir_path = os.path.join(folder_path, state, "labels")
+            if not os.path.isdir(dst_label_dir_path):
+                os.makedirs(dst_label_dir_path)
+            dst_label_path = os.path.join(dst_label_dir_path, filename)
+            shutil.copyfile(src_label_path, dst_label_path)
+            # print("Copying", src_label_path, "to", dst_label_path)
+
+
 
 
 if __name__ == "__main__":
