@@ -6,7 +6,7 @@ import os
 import argparse
 
 from guided_diffusion import dist_util, logger
-from guided_diffusion.image_datasets import load_data, load_data_from_file_paths
+from guided_diffusion.image_datasets import load_data, load_data_from_file_paths, load_data_from_numpy
 from guided_diffusion.resample import create_named_schedule_sampler
 from guided_diffusion.script_util import (
     model_and_diffusion_defaults,
@@ -34,30 +34,55 @@ def train(args):
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion)
     torch.cuda.empty_cache() 
 
-    if args.train_file_paths and args.val_file_paths:
+    contains_train_and_val = (args.train_file_paths and args.val_file_paths) or (args.train_indices and args.val_indices)
+    if contains_train_and_val:
         logger.log("creating data loader with train and validation files...")
         logger.log("batch_size:" + str(args.batch_size))
-        train_data = load_data_from_file_paths(
-            dataset_mode=args.dataset_mode,
-            file_paths=args.train_file_paths,
-            batch_size=args.batch_size,
-            image_size=args.image_size,
-            class_cond=args.class_cond,
-            random_crop=True,
-            random_flip=True,
-            deterministic=False
-        )
+        
+        if args.train_file_paths and args.val_file_paths: #file paths or indices
+            
+            train_data = load_data_from_file_paths(
+                dataset_mode=args.dataset_mode,
+                file_paths=args.train_file_paths,
+                batch_size=args.batch_size,
+                image_size=args.image_size,
+                class_cond=args.class_cond,
+                random_crop=True,
+                random_flip=True,
+                deterministic=False
+            )
 
-        val_data = load_data_from_file_paths(
-            dataset_mode=args.dataset_mode,
-            file_paths=args.val_file_paths,
-            batch_size=args.batch_size,
-            image_size=args.image_size,
-            class_cond=args.class_cond,
-            random_crop=False,
-            random_flip=False,
-            deterministic=True
-        )
+            val_data = load_data_from_file_paths(
+                dataset_mode=args.dataset_mode,
+                file_paths=args.val_file_paths,
+                batch_size=args.batch_size,
+                image_size=args.image_size,
+                class_cond=args.class_cond,
+                random_crop=False,
+                random_flip=False,
+                deterministic=True
+            )
+        else:
+            train_data = load_data_from_numpy(
+                images_path=args.images_path,
+                masks_path=args.masks_path,
+                batch_size=args.batch_size,
+                image_size=args.image_size,
+                random_flip=True,
+                deterministic=False,
+                indices = args.train_indices
+            )
+
+            val_data = load_data_from_numpy(
+                images_path=args.images_path,
+                masks_path=args.masks_path,
+                batch_size=args.batch_size,
+                image_size=args.image_size,
+                random_flip=True,
+                deterministic=False,
+                indices = args.val_indices
+            )
+
 
         print("CUDA available 2:", torch.cuda.is_available(), "device_count:", torch.cuda.device_count())
         logger.log("training...")
@@ -65,7 +90,7 @@ def train(args):
         TrainLoop(
             model=model,
             diffusion=diffusion,
-            data= train_data,
+            data = train_data,
             val_data = val_data,
             num_classes=args.num_classes,
             batch_size=args.batch_size,
@@ -83,7 +108,7 @@ def train(args):
             lr_anneal_steps=args.lr_anneal_steps,
             max_epochs = 20000
         ).run_loop()
-    
+
     
     elif args.data_dir: #legacy mode without epochs and without validation set
         logger.log("creating data loader from data_dir...")

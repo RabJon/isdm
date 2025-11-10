@@ -70,7 +70,7 @@ def get_class_counts_frequencies(
 
 
 def balance(
-        mask_file_paths, 
+        masks_or_mask_file_paths, 
         num_samples,
         num_classes,
         height = 256,
@@ -90,8 +90,8 @@ def balance(
         raise NotImplementedError("Based on object count is not implemented yet!")
     
     rng = np.random.default_rng()
-    mask_file_paths = np.array(mask_file_paths)
-    num_real_masks = len(mask_file_paths)
+    masks_or_mask_file_paths = np.array(masks_or_mask_file_paths)
+    num_real_masks = len(masks_or_mask_file_paths)
     num_defects = num_classes - 1
 
     update_class_counts = lambda counts, new_masks:\
@@ -99,13 +99,18 @@ def balance(
             y+x for x,y in zip(get_class_counts_frequencies(new_masks, num_defects=num_defects)[0], counts) 
         ] 
 
-    
-    Y = np.zeros((num_real_masks, height, width), dtype=np.uint8)
-    for i in range(num_real_masks):
-        mask = Image.open(mask_file_paths[i]).convert('L').resize((width, height), resample=Image.NEAREST)
+    provided_as_masks = isinstance(masks_or_mask_file_paths[0], np.ndarray)
+    if provided_as_masks:
+        Y = masks_or_mask_file_paths
         if num_classes == 2:
-            mask[mask == 255] = 1
-        Y[i] = np.array(mask)
+            Y[Y == 255] = 1
+    else:
+        Y = np.zeros((num_real_masks, height, width), dtype=np.uint8)
+        for i in range(num_real_masks):
+            mask = Image.open(masks_or_mask_file_paths[i]).convert('L').resize((width, height), resample=Image.NEAREST)
+            if num_classes == 2:
+                mask[mask == 255] = 1
+            Y[i] = np.array(mask)
     
     shape = Y.shape
     reshaped_masks = Y.squeeze().reshape( (shape[0], shape[1] * shape[2]) )

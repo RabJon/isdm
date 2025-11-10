@@ -177,21 +177,26 @@ def main():
             #These two need to be added as placeholders, such that the right dataloader is used
             train_file_paths = "train"
             val_file_paths = "trainval"
+            config = {"train_file_paths": train_file_paths, "val_file_paths": val_file_paths}
+        elif config_in["dataset_mode"] == "numpy": 
+            images_path = os.path.join(config_in["data_dir"], "train", "visions.npy")
+            masks_path = os.path.join(config_in["data_dir"], "train","semantic_masks.npy")
+            train_indices, val_indices = train_test_split(np.arange(np.load(masks_path, mmap_mode='r').shape[0]), test_size=0.2, random_state=args.seed)
+            print("Splitted dataset into", len(train_indices), "training samples and", len(val_indices), "validation samples.")
+            config = {"train_indices": train_indices.tolist(), "val_indices": val_indices.tolist(), "images_path": images_path, "masks_path": masks_path}
+
         else:
             image_file_paths, mask_file_paths = get_dataset_file_paths(os.path.join(config_in["data_dir"], "train"))
             train_images, val_images, train_masks, val_masks = train_test_split(image_file_paths, mask_file_paths, test_size=0.2, random_state=args.seed)
             train_file_paths = (train_images, train_masks)
             val_file_paths = (val_images, val_masks)
             print("Splitted dataset into", len(train_images), "training samples and", len(val_images), "validation samples.")
+            config = {"train_file_paths": train_file_paths, "val_file_paths": val_file_paths}
             
         # Add defaults to config
-        config = get_training_defaults()
+        config.update(get_training_defaults())
         config.update(model_and_diffusion_defaults())
         config.update(config_in)
-
-        #Manipulate config to have better control over training procedure
-        config["train_file_paths"] = train_file_paths
-        config["val_file_paths"] = val_file_paths
 
     elif args.action == "sample":
         config = get_sampling_defaults()
@@ -200,13 +205,21 @@ def main():
 
         #Manipulate config to have better control over sampling procedure
         if "balance_args" in config: #balancing is used
-            image_file_paths, mask_file_paths = get_dataset_file_paths(os.path.join(config_in["data_dir"], "train"))
-            balanced_indices = balance(mask_file_paths, config["num_samples"], config["num_classes"], height=config["image_size"], width=config["image_size"], **config["balance_args"])
-            image_file_paths = np.array(image_file_paths)[balanced_indices]
-            mask_file_paths = np.array(mask_file_paths)[balanced_indices]
-            config["file_paths"] = (image_file_paths.tolist(), mask_file_paths.tolist())
+            if config["dataset_mode"] == "numpy": 
+                masks = np.load(os.path.join(config["data_dir"], "semantic_masks.npy"))
+                balanced_indices = balance(masks, config["num_samples"], config["num_classes"], height=config["image_size"], width=config["image_size"], **config["balance_args"])
+                config["indices"] = balanced_indices
+            else:
+                image_file_paths, mask_file_paths = get_dataset_file_paths(os.path.join(config_in["data_dir"], "train"))
+                balanced_indices = balance(mask_file_paths, config["num_samples"], config["num_classes"], height=config["image_size"], width=config["image_size"], **config["balance_args"])
+                image_file_paths = np.array(image_file_paths)[balanced_indices]
+                mask_file_paths = np.array(mask_file_paths)[balanced_indices]
+                config["file_paths"] = (image_file_paths.tolist(), mask_file_paths.tolist())
         else:
-            config["file_paths"] = None 
+            if config["dataset_mode"] == "numpy": 
+                config["indices"] = None
+            else:
+                config["file_paths"] = None 
 
 
     

@@ -7,7 +7,7 @@ import argparse
 import os
 
 
-from guided_diffusion.image_datasets import load_data, load_data_from_file_paths
+from guided_diffusion.image_datasets import load_data, load_data_from_file_paths, load_data_from_numpy
 
 from guided_diffusion import dist_util, logger
 from guided_diffusion.script_util import (
@@ -42,7 +42,19 @@ def sample(args):
 
     logger.log("creating data loader...")
 
-    if args.file_paths:
+    if args.dataset_mode == "numpy":
+        data = load_data_from_numpy(
+            images_path=args.images_path,
+            masks_path=args.masks_path,
+            batch_size=args.batch_size,
+            image_size=args.image_size,
+            random_flip=False,
+            deterministic=True,
+            indices=args.indices
+        )
+    
+    
+    elif args.file_paths:
         data = load_data_from_file_paths(
             dataset_mode=args.dataset_mode,
             file_paths=args.file_paths,

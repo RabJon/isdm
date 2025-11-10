@@ -72,7 +72,6 @@ def load_data(
         raise NotImplementedError('{} not implemented'.format(dataset_mode))
 
     print("Len of Dataset:", len(all_files))
-
     dataset = ImageDataset(
         dataset_mode,
         image_size,
@@ -163,6 +162,35 @@ def load_data_from_file_paths(
     
     return loader
 
+def load_data_from_numpy(
+    *,
+    images_path,
+    masks_path,
+    batch_size,
+    image_size,
+    deterministic = False,
+    random_flip = True,
+    indices = None
+    ):
+    dataset = NumpyDataset(
+        images_path, 
+        masks_path, 
+        image_size, 
+        shard=MPI.COMM_WORLD.Get_rank(), 
+        num_shards=MPI.COMM_WORLD.Get_size(), 
+        random_flip=random_flip, 
+        indices=indices)
+    
+    if deterministic:
+        loader = DataLoader(
+            dataset, batch_size=batch_size, shuffle=False, num_workers=1, drop_last=True
+        )
+    else:
+        loader = DataLoader(
+            dataset, batch_size=batch_size, shuffle=True, num_workers=1, drop_last=True
+        )
+    
+    return loader
 
 
 def _list_image_files_recursively(data_dir):
@@ -277,6 +305,67 @@ class ImageDataset(Dataset):
             out_dict['instance'] = arr_instance[None, ]
 
         return np.transpose(arr_image, [2, 0, 1]), out_dict
+
+
+class NumpyDataset(Dataset):
+    
+    def __init__(
+        self,
+        images_path,
+        masks_path,
+        image_size = 128,
+        shard=0,
+        num_shards=1,
+        random_flip=True,
+        indices = None
+    ):
+        super().__init__()
+        self.images_path = images_path
+        self.masks_path = masks_path
+        self.image_size = image_size
+        self.shard = shard
+        self.num_shards = num_shards
+        self.random_flip = random_flip
+        self.indices = indices
+        
+        self.local_images = np.load(images_path, mmap_mode='r')[indices]
+        self.local_masks = np.load(masks_path, mmap_mode='r')[indices]
+        
+        if indices is not None:
+            self.local_images = self.local_images[indices]
+            self.local_masks = self.local_masks[indices]
+
+        self.local_images = self.local_images[shard:][::num_shards]
+        self.local_masks = self.local_masks[shard:][::num_shards]
+
+    def __len__(self):
+        return len(self.local_images)
+
+    def __getitem__(self, idx):
+
+        image = self.local_images[idx]
+        mask = self.local_masks[idx]
+        out_dict = {}
+
+        if image.shape[:2] != (self.image_size, self.image_size):
+            image, mask, _ = resize_arr([Image.fromarray(image), Image.fromarray(mask), None], self.image_size, keep_aspect=False)
+        
+        
+        random_float = random.random() 
+        if self.random_flip and random_float < 0.5:
+            if random_float < 0.25:
+                image = image[:, ::-1].copy()
+                mask = mask[:, ::-1].copy()
+            else:
+                image = image[::-1, :].copy()
+                mask = mask[::-1, :].copy()
+
+        image = image.astype(np.float32) / 127.5 - 1
+        out_dict['label_ori'] = mask.copy()
+        out_dict['label'] = mask[None, ]
+
+        return np.transpose(image, [2, 0, 1]), out_dict
+
 
 
 def resize_arr(pil_list, image_size, keep_aspect=True):
