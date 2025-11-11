@@ -179,8 +179,8 @@ def main():
             val_file_paths = "trainval"
             config = {"train_file_paths": train_file_paths, "val_file_paths": val_file_paths}
         elif config_in["dataset_mode"] == "numpy": 
-            images_path = os.path.join(config_in["data_dir"], "train", "visions.npy")
-            masks_path = os.path.join(config_in["data_dir"], "train","semantic_masks.npy")
+            images_path = os.path.join(config_in["data_dir"], "visions.npy")
+            masks_path = os.path.join(config_in["data_dir"], "semantic_masks.npy")
             train_indices, val_indices = train_test_split(np.arange(np.load(masks_path, mmap_mode='r').shape[0]), test_size=0.2, random_state=args.seed)
             print("Splitted dataset into", len(train_indices), "training samples and", len(val_indices), "validation samples.")
             config = {"train_indices": train_indices.tolist(), "val_indices": val_indices.tolist(), "images_path": images_path, "masks_path": masks_path}
