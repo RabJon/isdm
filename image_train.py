@@ -34,12 +34,34 @@ def train(args):
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion)
     torch.cuda.empty_cache() 
 
-    contains_train_and_val = (args.train_file_paths and args.val_file_paths) or (args.train_indices and args.val_indices)
-    if contains_train_and_val:
+    
+    if (args.dataset_mode == "numpy") or ("lemon" in args.dataset_mode):
         logger.log("creating data loader with train and validation files...")
         logger.log("batch_size:" + str(args.batch_size))
         
-        if args.train_file_paths and args.val_file_paths: #file paths or indices
+        
+        if args.dataset_mode == "numpy":
+            train_data = load_data_from_numpy(
+                images_path=args.images_path,
+                masks_path=args.masks_path,
+                batch_size=args.batch_size,
+                image_size=args.image_size,
+                random_flip=True,
+                deterministic=False,
+                indices = args.train_indices
+            )
+
+            val_data = load_data_from_numpy(
+                images_path=args.images_path,
+                masks_path=args.masks_path,
+                batch_size=args.batch_size,
+                image_size=args.image_size,
+                random_flip=True,
+                deterministic=False,
+                indices = args.val_indices
+            )
+        
+        else:
             
             train_data = load_data_from_file_paths(
                 dataset_mode=args.dataset_mode,
@@ -62,27 +84,6 @@ def train(args):
                 random_flip=False,
                 deterministic=True
             )
-        else:
-            train_data = load_data_from_numpy(
-                images_path=args.images_path,
-                masks_path=args.masks_path,
-                batch_size=args.batch_size,
-                image_size=args.image_size,
-                random_flip=True,
-                deterministic=False,
-                indices = args.train_indices
-            )
-
-            val_data = load_data_from_numpy(
-                images_path=args.images_path,
-                masks_path=args.masks_path,
-                batch_size=args.batch_size,
-                image_size=args.image_size,
-                random_flip=True,
-                deterministic=False,
-                indices = args.val_indices
-            )
-
 
         print("CUDA available 2:", torch.cuda.is_available(), "device_count:", torch.cuda.device_count())
         logger.log("training...")
