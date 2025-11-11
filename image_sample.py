@@ -44,8 +44,8 @@ def sample(args):
 
     if args.dataset_mode == "numpy":
         data = load_data_from_numpy(
-            images_path=args.images_path,
-            masks_path=args.masks_path,
+            images_path=os.path.join(args.data_dir, "visions.npy"),
+            masks_path=os.path.join(args.data_dir, "semantic_masks.npy"),
             batch_size=args.batch_size,
             image_size=args.image_size,
             random_flip=False,

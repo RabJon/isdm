@@ -208,7 +208,7 @@ def main():
             if config["dataset_mode"] == "numpy": 
                 masks = np.load(os.path.join(config["data_dir"], "semantic_masks.npy"))
                 balanced_indices = balance(masks, config["num_samples"], config["num_classes"], height=config["image_size"], width=config["image_size"], **config["balance_args"])
-                config["indices"] = balanced_indices
+                config["indices"] = balanced_indices.tolist()
             else:
                 image_file_paths, mask_file_paths = get_dataset_file_paths(os.path.join(config_in["data_dir"], "train"))
                 balanced_indices = balance(mask_file_paths, config["num_samples"], config["num_classes"], height=config["image_size"], width=config["image_size"], **config["balance_args"])

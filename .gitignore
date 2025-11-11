@@ -51,3 +51,4 @@ generated_data/
 tmp_pytorch_cuda_test.py
 runs/
 *_config*.json
+tmp.ipynb

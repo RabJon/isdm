@@ -520,6 +520,7 @@ class GaussianDiffusion:
         if noise is not None:
             img = noise
         else:
+            # print(f"sampling random noise with shape {shape} on device {device}...")
             img = th.randn(*shape, device=device)
         if 'y' in model_kwargs:
             model_kwargs['y'] = model_kwargs['y'].to(device)

@@ -102,14 +102,12 @@ def balance(
     provided_as_masks = isinstance(masks_or_mask_file_paths[0], np.ndarray)
     if provided_as_masks:
         Y = masks_or_mask_file_paths
-        if num_classes == 2:
-            Y[Y == 255] = 1
+        Y[Y >= num_classes] = 0 #setting to zero, because we can't generate regions the model was not trained for
     else:
         Y = np.zeros((num_real_masks, height, width), dtype=np.uint8)
         for i in range(num_real_masks):
             mask = Image.open(masks_or_mask_file_paths[i]).convert('L').resize((width, height), resample=Image.NEAREST)
-            if num_classes == 2:
-                mask[mask == 255] = 1
+            mask[mask >= num_classes] = 0 #setting to zero, because we can't generate regions the model was not trained for
             Y[i] = np.array(mask)
     
     shape = Y.shape

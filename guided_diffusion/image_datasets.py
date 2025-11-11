@@ -328,8 +328,8 @@ class NumpyDataset(Dataset):
         self.random_flip = random_flip
         self.indices = indices
         
-        self.local_images = np.load(images_path, mmap_mode='r')[indices]
-        self.local_masks = np.load(masks_path, mmap_mode='r')[indices]
+        self.local_images = np.load(images_path, mmap_mode='r')
+        self.local_masks = np.load(masks_path, mmap_mode='r')
         
         if indices is not None:
             self.local_images = self.local_images[indices]
@@ -362,7 +362,11 @@ class NumpyDataset(Dataset):
 
         image = image.astype(np.float32) / 127.5 - 1
         out_dict['label_ori'] = mask.copy()
-        out_dict['label'] = mask[None, ]
+        out_dict['label'] = mask[None,]
+        if self.indices is None:
+            out_dict['path'] = str(idx) #in this case the path corresponds to the original index of the loaded numpy array
+        else:
+            out_dict['path'] = str(self.indices[idx])
 
         return np.transpose(image, [2, 0, 1]), out_dict
 
