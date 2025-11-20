@@ -267,7 +267,7 @@ class TrainLoop:
                 
                 #version that uses just the train loss
                 if (min_val_loss is None) or (epoch_train_loss < min_val_loss):
-                    print("Epoch:", epoch, "Step:", self.step,"Train loss improved from", min_val_loss, "to", epoch_train_loss, "Saving new checkpoints!")
+                    logger.log(f"Epoch: {epoch} Step: {self.step} Train loss improved from {min_val_loss} to {epoch_train_loss} Saving new checkpoints!")
                     min_val_loss = epoch_train_loss
                     last_improvement_step = self.step
                     self.save(delete_last_saved=True)
