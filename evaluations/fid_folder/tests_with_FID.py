@@ -109,8 +109,15 @@ def get_activations(files, model, batch_size=50, dims=2048,
                   end='', flush=True)
         start = i * batch_size
         end = start + batch_size
-        images = np.array([resize(imread(str(f)).astype(np.float32), (256, 256, 3))
-                          for f in files[start:end]])
+
+        if isinstance(files[0], (str, pathlib.Path)):
+            # images = np.array([resize(imread(str(f)).astype(np.float32), (256, 256, 3))
+            #                 for f in files[start:end]])
+            images = np.array([imread(str(f)).astype(np.float32) for f in files[start:end]])
+        elif isinstance(files[0], np.ndarray):
+            images = files[start:end].astype(np.float32)
+        else:
+            raise ValueError(f"Unsupported file type: {type(files[0])}")
 
         # Reshape to (n_images, 3, height, width)
         images = images.transpose((0, 3, 1, 2))
@@ -230,10 +237,14 @@ def calculate_activation_statistics(files, model, batch_size=50,
 
 
 def _compute_statistics_of_path(path, model, batch_size, dims, cuda):
-    if path.endswith('.npz'):
+    if path.endswith(('.npz', ".npy")):
         f = np.load(path)
-        m, s = f['mu'][:], f['sigma'][:]
-        f.close()
+        if "mu" in f:
+            m, s = f['mu'][:], f['sigma'][:]
+        else:
+            m, s = calculate_activation_statistics(f, model,
+                                                   batch_size,
+                                                   dims, cuda)
     else:
         path = pathlib.Path(path)
         files = list(path.glob('*.jpg')) + list(path.glob('*.png'))
