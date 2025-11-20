@@ -147,6 +147,9 @@ def main():
             splitted_src_label_path[-2] = "labels"
             src_label_path = os.path.join(*splitted_src_label_path)
 
+            if src_sample_path.startswith(os.sep):
+                src_label_path = os.sep + src_label_path
+
             dst_label_dir_path = os.path.join(folder_path, state, "labels")
             if not os.path.isdir(dst_label_dir_path):
                 os.makedirs(dst_label_dir_path)
