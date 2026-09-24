@@ -181,7 +181,16 @@ def main():
         elif config_in["dataset_mode"] == "numpy": 
             images_path = os.path.join(config_in["data_dir"], "visions.npy")
             masks_path = os.path.join(config_in["data_dir"], "semantic_masks.npy")
-            train_indices, val_indices = train_test_split(np.arange(np.load(masks_path, mmap_mode='r').shape[0]), test_size=0.2, random_state=args.seed)
+            ignore_class = config_in.get("ignore_class", 255)
+            if ignore_class: #TODO: the code below skips samples containing ignore_class completely. There could be a better option...
+                masks = np.load(masks_path, mmap_mode='r')
+                free_of_ignore = np.all(masks != ignore_class, axis = (1,2))
+                assert len(free_of_ignore) == len(masks), "Length of masks and compute indices does not match!"
+                possible_indices = np.nonzero(free_of_ignore)
+            else:
+                possible_indices = np.arange(np.load(masks_path, mmap_mode='r').shape[0])
+            
+            train_indices, val_indices = train_test_split(possible_indices, test_size=0.2, random_state=args.seed)
             print("Splitted dataset into", len(train_indices), "training samples and", len(val_indices), "validation samples.")
             config = {"train_indices": train_indices.tolist(), "val_indices": val_indices.tolist(), "images_path": images_path, "masks_path": masks_path}
 
