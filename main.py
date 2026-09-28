@@ -153,6 +153,18 @@ def get_num_running_configs():
             running_configs += 1
     return running_configs
 
+def get_allowed_indices(masks, ignore_class = 255):
+    #TODO: the code below skips samples containing ignore_class completely. There could be a better option...
+    possible_indices = None
+    if ignore_class is not None:
+        free_of_ignore = np.all(masks != ignore_class, axis = (1,2))
+        assert free_of_ignore.shape[0] == masks.shape[0], "Length of masks and compute indices does not match!"
+        possible_indices = np.nonzero(free_of_ignore)[0]
+    else:
+        possible_indices = np.arange(len(masks)) #all indices possible
+
+    return possible_indices
+
 def main():
     print("CUDA available 1:", torch.cuda.is_available())
     
@@ -182,14 +194,8 @@ def main():
             images_path = os.path.join(config_in["data_dir"], "visions.npy")
             masks_path = os.path.join(config_in["data_dir"], "semantic_masks.npy")
             ignore_class = config_in.get("ignore_class", 255)
-            if ignore_class: #TODO: the code below skips samples containing ignore_class completely. There could be a better option...
-                masks = np.load(masks_path, mmap_mode='r')
-                free_of_ignore = np.all(masks != ignore_class, axis = (1,2))
-                assert len(free_of_ignore) == len(masks), "Length of masks and compute indices does not match!"
-                possible_indices = np.nonzero(free_of_ignore)
-            else:
-                possible_indices = np.arange(np.load(masks_path, mmap_mode='r').shape[0])
-            
+            masks = np.load(masks_path, mmap_mode='r')
+            possible_indices = get_allowed_indices(masks, ignore_class)
             train_indices, val_indices = train_test_split(possible_indices, test_size=0.2, random_state=args.seed)
             print("Splitted dataset into", len(train_indices), "training samples and", len(val_indices), "validation samples.")
             config = {"train_indices": train_indices.tolist(), "val_indices": val_indices.tolist(), "images_path": images_path, "masks_path": masks_path}
@@ -212,11 +218,15 @@ def main():
         config.update(model_and_diffusion_defaults())
         config.update(config_in)
 
+        ignore_class = config.get("ignore_class", 255)
+        
         #Manipulate config to have better control over sampling procedure
         if "balance_args" in config: #balancing is used
             if config["dataset_mode"] == "numpy": 
                 masks = np.load(os.path.join(config["data_dir"], "semantic_masks.npy"))
                 balanced_indices = balance(masks, config["num_samples"], config["num_classes"], **config["balance_args"])
+                possible_indices = get_allowed_indices(masks, ignore_class)
+                balanced_indices = balanced_indices[np.isin(balanced_indices, possible_indices)]
                 config["indices"] = balanced_indices.tolist()
             else:
                 image_file_paths, mask_file_paths = get_dataset_file_paths(os.path.join(config_in["data_dir"], "train"))
@@ -226,7 +236,11 @@ def main():
                 config["file_paths"] = (image_file_paths.tolist(), mask_file_paths.tolist())
         else:
             if config["dataset_mode"] == "numpy": 
-                config["indices"] = None
+                if ignore_class is None:
+                    config["indices"] = None
+                else:
+                    masks = np.load(os.path.join(config["data_dir"], "semantic_masks.npy"), mmap_mode="r")
+                    config["indices"] = get_allowed_indices(masks, ignore_class).tolist()
             else:
                 config["file_paths"] = None 
 

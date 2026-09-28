@@ -1,16 +1,16 @@
 {
-    "data_dir": "/home/icon/Desktop/numpy_train", 
+    "data_dir": "/home/icon/data/2026-09-24_Numpy_Datasets/train/ALL", 
     "dataset_mode": "numpy", 
     "clip_denoised": true, 
-    "num_samples": 8000, 
+    "num_samples": 64, 
     "batch_size": 32, 
     "use_ddim": false, 
-    "model_path": "OUTPUT/20251111-130816_train_numpy_train_d=1000_c=20/ema_0.9999_091171.pt", 
+    "model_path": "/home/icon/dev/isdm/OUTPUT/20260924-114030_train_ALL_d=1000_c=26/ema_0.9999_087330.pt", 
     "results_path": "", 
     "is_train": false, 
     "s": 1.5, 
     "image_size": 128, 
-    "num_classes": 20, 
+    "num_classes": 26, 
     "num_channels": 256, 
     "num_res_blocks": 2, 
     "num_heads": 4, 
@@ -36,4 +36,4 @@
     "rescale_learned_sigmas": false, 
     "root_log_dir": "OUTPUT/", 
     "lr": 0.0001, 
-    "balance_args": {"ejection_classes": [0], "random_seed": 73}}
+    "balance_args": {"ejection_classes": [0, 255], "random_seed": 5}}

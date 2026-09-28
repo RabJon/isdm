@@ -1,13 +1,13 @@
 {
     "root_log_dir": "OUTPUT/", 
-    "data_dir": "/home/icon/Desktop/numpy_train", 
+    "data_dir": "/home/icon/data/2026-09-24_Numpy_Datasets/train/ALL", 
     "dataset_mode": "numpy", 
     "lr": 0.0001, 
     "batch_size": 4, 
     "diffusion_steps": 1000, 
     "image_size": 128, 
     "learn_sigma": true, 
-    "num_classes": 20, 
+    "num_classes": 26, 
     "noise_schedule": "linear", 
     "class_cond": true, 
     "num_channels": 256, 
@@ -19,4 +19,6 @@
     "use_scale_shift_norm": true, 
     "use_checkpoint": true, 
     "no_instance": true, 
-    "weights_decay": 1e-05}
+    "weights_decay": 1e-05,
+    "ignore_class": 255
+}
